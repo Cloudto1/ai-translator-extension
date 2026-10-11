@@ -7,28 +7,31 @@
 
 /* ---------- tokens ---------- */
 :root {
-  /* 品牌色 — 浅色主题（MASTER.md §1）*/
-  --primary:       #0E7490;
-  --primary-hover: #0B5F78;
-  --primary-soft:  #0891B2;
-  --primary-weak:  rgba(14, 116, 144, .12);
-  --primary-glow:  rgba(14, 116, 144, .35);
-  --on-primary:    #FFFFFF;
+  /* 全站单一深色主题（取 MASTER.md §1 的深色取值）*/
+  color-scheme: dark;
 
-  /* 中性色 — 浅色主题 */
-  --bg:      #F8FAFC;
-  --bg-rgb:  248 250 252;
-  --surface: #FFFFFF;
-  --text:    #0F172A;
-  --muted:   #475569;
-  --border:  #E2E8F0;
+  /* 品牌色 */
+  --primary:       #22B8CF;
+  --primary-hover: #3DCADD;
+  --primary-soft:  #67E8F9;
+  --primary-weak:  rgba(34, 184, 207, .16);
+  --primary-glow:  rgba(34, 184, 207, .30);
+  --on-primary:    #06232A;
+
+  /* 中性色 */
+  --bg:      #14161D;
+  --bg-rgb:  20 22 29;
+  --surface: #1B1E27;
+  --text:    #E5E7EB;
+  --muted:   #9AA3B2;
+  --border:  rgba(148, 163, 184, .22);
 
   /* 阴影（MASTER.md §3：全站只用两种强度）*/
-  --shadow:         0 1px 2px rgba(15, 23, 42, .06), 0 8px 24px rgba(15, 23, 42, .06);
-  --shadow-overlay: 0 12px 32px rgba(15, 23, 42, .16), 0 2px 8px rgba(15, 23, 42, .08);
+  --shadow:         0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .4);
+  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .35);
 
-  /* 品牌渐变（仅用于深色区块的标题字）*/
-  --brand-gradient: linear-gradient(100deg, #0E7490 0%, #0891B2 100%);
+  /* 品牌渐变（标题字用「近白 → 亮青」）*/
+  --brand-gradient: linear-gradient(100deg, #F0FDFF 0%, #A5F3FC 30%, #22B8CF 100%);
 
   /* 字体（MASTER.md §2）*/
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI',
@@ -49,35 +52,6 @@
   /* 动效（MASTER.md §6：悬停 120-140ms）*/
   --ease-hover: .14s ease;
   --ease-panel: .18s ease-out;
-}
-
-/* 深色区块：同一套语义令牌，切换为深色主题取值
-   （深色下主色换亮青，且填充之上改用深色文字，见 MASTER.md §1 深色主题）*/
-.hero,
-.topbar,
-.section--ink,
-.footer {
-  --primary:       #22B8CF;
-  --primary-hover: #3DCADD;
-  --primary-soft:  #67E8F9;
-  --primary-weak:  rgba(34, 184, 207, .16);
-  --primary-glow:  rgba(34, 184, 207, .30);
-  --on-primary:    #06232A;
-
-  --bg:      #14161D;
-  --bg-rgb:  20 22 29;
-  --surface: #1B1E27;
-  --text:    #E5E7EB;
-  --muted:   #9AA3B2;
-  --border:  rgba(148, 163, 184, .22);
-
-  --shadow:         0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .4);
-  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .35);
-
-  /* 深色下用「近白 → 亮青」渐变，保证大字对比度仍在 3:1 以上 */
-  --brand-gradient: linear-gradient(100deg, #F0FDFF 0%, #A5F3FC 30%, #22B8CF 100%);
-
-  color: var(--text);
 }
 
 /* ---------- reset ---------- */
@@ -136,11 +110,7 @@ code, kbd { font-family: var(--font-mono); }
   stroke-linejoin: round;
 }
 
-::selection { background: rgba(14, 116, 144, .22); }
-.hero ::selection,
-.section--ink ::selection,
-.topbar ::selection,
-.footer ::selection { background: rgba(34, 184, 207, .3); }
+::selection { background: rgba(34, 184, 207, .3); }
 
 :focus-visible {
   outline: 2px solid var(--primary);
@@ -213,8 +183,9 @@ code, kbd { font-family: var(--font-mono); }
     linear-gradient(rgba(148, 163, 184, .10) 1px, transparent 1px),
     linear-gradient(90deg, rgba(148, 163, 184, .10) 1px, transparent 1px);
   background-size: 72px 72px;
-  -webkit-mask-image: radial-gradient(115% 85% at 50% 0%, #000 22%, transparent 78%);
-  mask-image: radial-gradient(115% 85% at 50% 0%, #000 22%, transparent 78%);
+  /* 用居中的椭圆遮罩：网格在上下边界处正好衰减为 0，不与相邻区块产生接缝 */
+  -webkit-mask-image: radial-gradient(120% 62% at 50% 48%, #000 18%, transparent 74%);
+  mask-image: radial-gradient(120% 62% at 50% 48%, #000 18%, transparent 74%);
 }
 
 .btn {
@@ -389,6 +360,14 @@ kbd {
   color: var(--text);
   padding-block: clamp(52px, 8vw, 96px) clamp(64px, 10vw, 128px);
 }
+/* 首屏装饰层：整体上下淡出，避免光晕被 overflow 切出硬边接缝 */
+.hero__aura {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 15%, #000 72%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 15%, #000 72%, transparent 100%);
+}
 .hero__glow {
   position: absolute;
   left: 50%;
@@ -396,21 +375,11 @@ kbd {
   width: 900px;
   height: 900px;
   transform: translateX(-50%);
-  background: radial-gradient(circle, var(--primary-glow), transparent 62%);
+  background: radial-gradient(circle, var(--primary-glow), rgba(34, 184, 207, 0) 62%);
   filter: blur(24px);
   pointer-events: none;
 }
-/* 第二层环境光：右下角补一点纵深，避免大面积纯平 */
-.hero__glow--b {
-  left: auto;
-  right: -200px;
-  top: auto;
-  bottom: -440px;
-  width: 780px;
-  height: 780px;
-  transform: none;
-  opacity: .6;
-}
+
 .hero__inner {
   position: relative;
   z-index: 1;
@@ -603,11 +572,18 @@ kbd {
   color: var(--text);
 }
 .section--tight { padding-block: clamp(52px, 7vw, 88px); }
-.section--ink {
-  background: var(--bg);
-  color: var(--text);
-}
 .section[id] { scroll-margin-top: 84px; }
+
+/* 全站同一深色底，靠极淡的品牌色辉光制造纵深，避免中段发平 */
+#features::before,
+#compat::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(62% 42% at 50% 40%, rgba(34, 184, 207, .12), rgba(34, 184, 207, 0) 74%);
+}
 
 .h2 {
   font-size: clamp(1.85rem, 3.6vw, 2.9rem);
