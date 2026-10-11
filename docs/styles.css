@@ -152,6 +152,12 @@ code, kbd { font-family: var(--font-mono); }
 .btn--signal:hover { background: var(--signal-hot); transform: translateY(-1px); }
 .btn--ghost { color: var(--text-inv); border-color: var(--line-ink); }
 .btn--ghost:hover { border-color: var(--signal-bright); background: rgba(143, 182, 255, .08); }
+.btn--outline { color: var(--text-ink); border-color: var(--line-paper); }
+.btn--outline:hover {
+  color: var(--signal-ink);
+  border-color: var(--signal);
+  background: rgba(61, 111, 245, .06);
+}
 .btn--sm { padding: .62em 1.05em; font-size: .88rem; }
 
 kbd {
@@ -726,6 +732,7 @@ kbd {
 }
 .step {
   position: relative;
+  min-width: 0;
   padding-left: 60px;
 }
 .step::before {
@@ -762,6 +769,27 @@ kbd {
   color: var(--text-ink);
   background: rgba(61, 111, 245, .1);
   border-radius: 3px;
+}
+
+/* 下载入口 */
+.dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.step__cmd {
+  display: block;
+  max-width: 100%;
+  margin-top: 12px;
+  padding: 9px 13px;
+  font-size: .78rem;
+  color: var(--text-ink);
+  background: rgba(61, 111, 245, .08);
+  border: 1px solid var(--line-paper);
+  border-radius: 3px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .codecard {
@@ -860,7 +888,12 @@ kbd {
   font-size: .88rem;
   line-height: 1.75;
 }
-.footer__top {
+.footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+}
+.footer__links a {
   font-family: var(--font-mono);
   font-size: .82rem;
   color: var(--signal-bright);
@@ -868,7 +901,7 @@ kbd {
   border-bottom: 1px solid transparent;
   transition: border-color .18s ease;
 }
-.footer__top:hover { border-bottom-color: var(--signal-bright); }
+.footer__links a:hover { border-bottom-color: var(--signal-bright); }
 
 /* =========================================================
    首屏编排动效（全站唯一一处非交互动效）
