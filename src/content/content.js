@@ -75,6 +75,9 @@
 
   function startRequest(type, payload, handlers = {}) {
     const id = `r${Date.now().toString(36)}-${++seq}`;
+    const body = { ...(payload || {}) };
+    // 附带页面信息，供后台写入翻译历史
+    if (!body.meta) body.meta = { url: location.href, title: document.title };
     const promise = new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
@@ -84,7 +87,7 @@
       }, REQUEST_TIMEOUT_MS);
       pending.set(id, { resolve, reject, handlers, timer });
       try {
-        ensurePort().postMessage({ id, type, payload });
+        ensurePort().postMessage({ id, type, payload: body });
       } catch (err) {
         pending.delete(id);
         clearTimeout(timer);
@@ -496,7 +499,7 @@
 
     const request = startRequest(
       REQ.TRANSLATE_TEXTS,
-      { texts, targetLang: settings.targetLang },
+      { texts, sourceLang: settings.sourceLang, targetLang: settings.targetLang },
       {
         onProgress: ({ done, total }) => setProgress(done, total, `正在翻译 ${done}/${total} 批…`),
       },
@@ -623,7 +626,7 @@
     let got = false;
     const request = startRequest(
       REQ.TRANSLATE_ONE,
-      { text, targetLang: settings.targetLang },
+      { text, sourceLang: settings.sourceLang, targetLang: settings.targetLang },
       {
         onDelta: ({ full }) => {
           got = true;
@@ -759,6 +762,7 @@
         title: document.title,
         url: location.href,
         text: pageText,
+        sourceLang: settings.sourceLang,
         targetLang: settings.targetLang,
         length: settings.summaryLength,
       },

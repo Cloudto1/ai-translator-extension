@@ -33,14 +33,49 @@ export function langName(code) {
   return LANGUAGE_NAMES[code] || code || 'English';
 }
 
+/** 生成「源语言 -> 目标语言」的提示句。 */
+export function languageHint(sourceLang, targetLang) {
+  const target = langName(targetLang);
+  if (!sourceLang || sourceLang === 'auto') {
+    return `Detect the source language automatically, then translate into ${target}.`;
+  }
+  return `The text is in ${langName(sourceLang)}. Translate it into ${target}.`;
+}
+
+/**
+ * 解析实际生效的语言对。
+ * - 源语言为 auto 时交给模型识别；
+ * - 目标语言为 auto 时按中 ⇄ 英 互译推断；
+ * - 源语言与目标语言被设置成同一种语言时自动反向翻译，避免出现「中文译成中文」。
+ */
+export function resolveLanguagePair(settings, sampleText) {
+  const configuredSource = settings?.sourceLang && settings.sourceLang !== 'auto' ? settings.sourceLang : 'auto';
+  const configuredTarget = settings?.targetLang || 'auto';
+
+  let target = configuredTarget;
+  let swapped = false;
+  if (configuredSource !== 'auto' && configuredSource === configuredTarget) {
+    target = configuredSource === 'en' ? 'zh' : 'en';
+    swapped = true;
+  }
+
+  return {
+    sourceLang: configuredSource,
+    targetLang: target,
+    resolvedSource: configuredSource === 'auto' ? detectLanguage(sampleText) : configuredSource,
+    resolvedTarget: resolveTargetLang(target, sampleText),
+    swapped,
+  };
+}
+
 /**
  * 划词/单条文本翻译。
  * @param {boolean} strong 用于「模型把整句当专有名词原样返回」时的重试，措辞更强硬
  */
-export function buildTranslateMessages(text, targetLang, { strong = false } = {}) {
+export function buildTranslateMessages(text, targetLang, { strong = false, sourceLang = 'auto' } = {}) {
   const target = langName(targetLang);
   const rules = [
-    `You are a professional translator. Translate the user's text into ${target}.`,
+    `You are a professional translator. ${languageHint(sourceLang, targetLang)}`,
     'Rules:',
     '1. Output ONLY the translation, no explanations, notes, quotes or markdown fences.',
     '2. Keep the original meaning, tone and formatting (line breaks, list markers).',
@@ -62,7 +97,7 @@ export function buildTranslateMessages(text, targetLang, { strong = false } = {}
 }
 
 /** 批量翻译（全页面），要求返回 JSON 数组，保证顺序与数量一致。 */
-export function buildBatchTranslateMessages(texts, targetLang) {
+export function buildBatchTranslateMessages(texts, targetLang, { sourceLang = 'auto' } = {}) {
   const target = langName(targetLang);
   const n = texts.length;
   const items = texts.map((t, i) => `[${i}] ${t}`).join('\n');
@@ -70,7 +105,7 @@ export function buildBatchTranslateMessages(texts, targetLang) {
     {
       role: 'system',
       content: [
-        `You are a professional translation engine. Translate the numbered items into ${target}.`,
+        `You are a professional translation engine. ${languageHint(sourceLang, targetLang)}`,
         'Rules:',
         `1. Output ONLY a JSON array of ${n} strings, for example ["translation of item 0","translation of item 1"].`,
         `2. The array MUST contain exactly ${n} items, in the same order as the input.`,

@@ -7,7 +7,11 @@ const els = {
   status: $('status'),
   statusText: $('statusText'),
   tabs: $('tabs'),
+  sourceLang: $('sourceLang'),
   targetLang: $('targetLang'),
+  swapLang: $('swapLang'),
+  langHint: $('langHint'),
+  openOptions: $('openOptions'),
   autoTranslateSelection: $('autoTranslateSelection'),
   apiKey: $('apiKey'),
   baseUrl: $('baseUrl'),
@@ -37,7 +41,29 @@ function renderStatus() {
   return errors;
 }
 
+const LANG_LABELS = new Map(LANGUAGES.map((item) => [item.value, item.label]));
+
+function langLabel(code) {
+  if (!code || code === 'auto') return '自动';
+  return LANG_LABELS.get(code) || code;
+}
+
+function renderLangHint() {
+  const { sourceLang, targetLang } = settings;
+  if (sourceLang === 'auto' && targetLang === 'auto') {
+    els.langHint.textContent = '自动 = 中 ⇄ 英 互译：中文内容译成英文，其它语言译成中文。';
+    els.langHint.style.color = '';
+  } else if (sourceLang === targetLang) {
+    els.langHint.textContent = '源语言与目标语言相同，翻译时会自动反向处理。';
+    els.langHint.style.color = 'var(--err)';
+  } else {
+    els.langHint.textContent = `当前语言对：${langLabel(sourceLang)} → ${langLabel(targetLang)}`;
+    els.langHint.style.color = '';
+  }
+}
+
 function fillForm() {
+  els.sourceLang.value = settings.sourceLang;
   els.targetLang.value = settings.targetLang;
   els.autoTranslateSelection.checked = settings.autoTranslateSelection;
   els.apiKey.value = settings.apiKey;
@@ -46,6 +72,7 @@ function fillForm() {
   els.pageMode.value = settings.pageMode;
   els.summaryLength.value = settings.summaryLength;
   els.disableThinking.checked = settings.disableThinking;
+  renderLangHint();
 }
 
 function flashSaved(text = '已保存') {
@@ -61,6 +88,7 @@ function flashSaved(text = '已保存') {
 async function persist(patch, { immediate = true } = {}) {
   settings = { ...settings, ...patch };
   renderStatus();
+  renderLangHint();
   const run = async () => {
     const res = await chrome.runtime.sendMessage({ type: MSG.SAVE_SETTINGS, settings });
     if (res?.ok) {
@@ -130,14 +158,16 @@ async function testConnection() {
 
 /* ---------------------------------------------------------------- */
 
+/** 源语言与目标语言对「自动」的表述不同，分别生成选项。 */
+function buildLangOptions(autoLabel) {
+  return LANGUAGES.map(
+    (lang) => `<option value="${lang.value}">${lang.value === 'auto' ? autoLabel : lang.label}</option>`,
+  ).join('');
+}
+
 function initLanguageSelect() {
-  els.targetLang.innerHTML = '';
-  for (const lang of LANGUAGES) {
-    const option = document.createElement('option');
-    option.value = lang.value;
-    option.textContent = lang.label;
-    els.targetLang.appendChild(option);
-  }
+  els.sourceLang.innerHTML = buildLangOptions('自动识别');
+  els.targetLang.innerHTML = buildLangOptions('自动（中 ⇄ 英）');
 }
 
 function bindEvents() {
@@ -155,7 +185,19 @@ function bindEvents() {
     });
   }
 
+  els.sourceLang.addEventListener('change', () => persist({ sourceLang: els.sourceLang.value }));
   els.targetLang.addEventListener('change', () => persist({ targetLang: els.targetLang.value }));
+  els.swapLang.addEventListener('click', () => {
+    const source = els.sourceLang.value === 'auto' ? 'en' : els.sourceLang.value;
+    const target = els.targetLang.value === 'auto' ? 'zh' : els.targetLang.value;
+    els.sourceLang.value = target;
+    els.targetLang.value = source;
+    persist({ sourceLang: target, targetLang: source });
+  });
+  els.openOptions.addEventListener('click', () => {
+    chrome.runtime.openOptionsPage();
+    window.close();
+  });
   els.autoTranslateSelection.addEventListener('change', () =>
     persist({ autoTranslateSelection: els.autoTranslateSelection.checked }),
   );

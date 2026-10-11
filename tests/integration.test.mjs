@@ -160,6 +160,56 @@ test('网页总结：内容过少时抛出明确错误', { skip }, async () => {
   );
 });
 
+test('用量统计：批量翻译聚合 Token 消耗', { skip }, async () => {
+  const { translations, usage, requestCount } = await translateTexts(settings, EN_SEGMENTS, { targetLang: 'zh' });
+  assert.equal(translations.length, EN_SEGMENTS.length);
+  assert.ok(usage.total > 0, `应返回 Token 用量：${JSON.stringify(usage)}`);
+  assert.equal(usage.total, usage.prompt + usage.completion, '总 Token 应等于输入 + 输出');
+  assert.ok(usage.completion > 0);
+  assert.ok(requestCount >= 1, `应记录请求次数，实际 ${requestCount}`);
+  console.log(`  ↳ ${requestCount} 次请求，共 ${usage.total} Token（输入 ${usage.prompt} / 输出 ${usage.completion}）`);
+});
+
+test('用量统计：流式翻译也能拿到 Token 用量', { skip }, async () => {
+  const result = await translateOne(settings, 'Artificial intelligence is transforming the way we work.', {
+    targetLang: 'zh',
+    onDelta: () => {},
+  });
+  assert.ok(result.usage.total > 0, `流式响应应带上用量：${JSON.stringify(result.usage)}`);
+  console.log(`  ↳ ${result.usage.total} Token`);
+});
+
+test('用量统计：网页总结返回 Token 用量', { skip }, async () => {
+  const result = await summarizePage(settings, {
+    title: 'AI future',
+    url: 'https://example.com',
+    text: EN_ARTICLE,
+    targetLang: 'zh',
+  });
+  assert.ok(result.usage.total > 0);
+  console.log(`  ↳ ${result.usage.total} Token`);
+});
+
+test('语言设置：固定源语言与目标语言', { skip }, async () => {
+  const result = await translateOne(settings, 'Good morning, everyone.', {
+    sourceLang: 'en',
+    targetLang: 'ja',
+  });
+  assert.equal(result.sourceLang, 'en');
+  assert.equal(result.targetLang, 'ja');
+  assert.ok(/[\u3040-\u30ff]/.test(result.text), `应输出日文：${result.text}`);
+  console.log(`  ↳ ${result.text}`);
+});
+
+test('语言设置：源语言与目标语言相同时自动反向翻译', { skip }, async () => {
+  const result = await translateOne(settings, '人工智能正在改变世界。', {
+    sourceLang: 'zh',
+    targetLang: 'zh',
+  });
+  assert.equal(result.targetLang, 'en', '同语言应自动反向');
+  assert.ok(/[A-Za-z]{4,}/.test(result.text), `应输出英文：${result.text}`);
+});
+
 test('兼容性：任意 OpenAI 协议端点都能拿到结果', { skip }, async () => {
   // 直接验证请求体符合 OpenAI 规范（messages/model/max_tokens）
   const result = await chatCompletion({

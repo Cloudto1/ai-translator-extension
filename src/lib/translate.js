@@ -3,11 +3,11 @@
  * 只依赖 api.js / prompts.js，可在 Node 中直接测试。
  */
 
-import { chatCompletion, ApiError } from './api.js';
+import { chatCompletion, ApiError, mergeUsage, normalizeUsage } from './api.js';
 import {
   buildTranslateMessages,
   buildBatchTranslateMessages,
-  resolveTargetLang,
+  resolveLanguagePair,
   detectLanguage,
 } from './prompts.js';
 
@@ -137,45 +137,64 @@ export function findUntranslated(list, translations, targetLang) {
 }
 
 /** 翻译单条文本（onDelta 存在时走流式输出；漏译时自动强引导重试一次）。 */
-export async function translateOne(settings, text, { targetLang, onDelta, signal, strong = false } = {}) {
-  const lang = resolveTargetLang(targetLang ?? settings.targetLang, text);
+export async function translateOne(settings, text, options = {}) {
+  const { onDelta, signal, strong = false } = options;
+  const pair = resolveLanguagePair(
+    {
+      sourceLang: options.sourceLang ?? settings.sourceLang,
+      targetLang: options.targetLang ?? settings.targetLang,
+    },
+    text,
+  );
+
   const run = async (useStrong) => {
-    const messages = buildTranslateMessages(text, lang, { strong: useStrong });
+    const messages = buildTranslateMessages(text, pair.resolvedTarget, {
+      strong: useStrong,
+      sourceLang: pair.sourceLang,
+    });
     const result = await chatCompletion({
       ...commonOptions(settings, messages, [text], signal),
       stream: typeof onDelta === 'function',
       onDelta,
     });
     assertNotTruncated(result);
-    return { text: cleanRaw(result.content), usage: result.usage };
+    return { text: cleanRaw(result.content), usage: normalizeUsage(result.usage) };
   };
 
   let output = await run(strong);
+  let usage = output.usage;
   if (!strong && !output.text) throw new ApiError('模型没有返回翻译结果，请重试。', 'EMPTY_RESULT');
-  if (!strong && looksUntranslated(text, output.text, lang)) {
+  if (!strong && looksUntranslated(text, output.text, pair.resolvedTarget)) {
     const retry = await run(true);
     if (retry.text) output = retry;
+    usage = mergeUsage(usage, retry.usage);
   }
   if (!output.text) throw new ApiError('模型没有返回翻译结果，请重试。', 'EMPTY_RESULT');
-  return { text: output.text, targetLang: lang, usage: output.usage };
+  return {
+    text: output.text,
+    sourceLang: pair.resolvedSource,
+    targetLang: pair.resolvedTarget,
+    usage,
+  };
 }
 
-async function translateBatch(settings, texts, lang, signal) {
-  const messages = buildBatchTranslateMessages(texts, lang);
+async function translateBatch(settings, texts, lang, signal, sourceLang = 'auto') {
+  const messages = buildBatchTranslateMessages(texts, lang, { sourceLang });
   const result = await chatCompletion(commonOptions(settings, messages, texts, signal));
   assertNotTruncated(result);
+  const usage = normalizeUsage(result.usage);
   const parsed = parseTranslationArray(result.content, texts.length);
-  if (parsed) return parsed;
+  if (parsed) return { items: parsed, usage };
 
   // 解析失败：拆半重试；单条时退化为「直接使用返回文本」
   if (texts.length > 1) {
     const mid = Math.ceil(texts.length / 2);
-    const left = await translateBatch(settings, texts.slice(0, mid), lang, signal);
-    const right = await translateBatch(settings, texts.slice(mid), lang, signal);
-    return [...left, ...right];
+    const left = await translateBatch(settings, texts.slice(0, mid), lang, signal, sourceLang);
+    const right = await translateBatch(settings, texts.slice(mid), lang, signal, sourceLang);
+    return { items: [...left.items, ...right.items], usage: mergeUsage(mergeUsage(usage, left.usage), right.usage) };
   }
   const fallback = cleanRaw(result.content);
-  if (fallback) return [fallback];
+  if (fallback) return { items: [fallback], usage };
   throw new ApiError('模型返回格式无法解析，请重试。', 'PARSE_ERROR', result.content);
 }
 
@@ -189,22 +208,48 @@ async function translateBatch(settings, texts, lang, signal) {
 export async function translateTexts(settings, texts, opts = {}) {
   const { onProgress, signal, limits = {} } = opts;
   const list = (texts || []).map((t) => String(t ?? ''));
-  if (list.length === 0) return { translations: [], targetLang: settings.targetLang };
+  const empty = {
+    translations: [],
+    sourceLang: settings.sourceLang,
+    targetLang: settings.targetLang,
+    usage: normalizeUsage(null),
+    requestCount: 0,
+  };
+  if (list.length === 0) return empty;
 
   const sample = list.join('\n').slice(0, 2000);
-  const lang = resolveTargetLang(opts.targetLang ?? settings.targetLang, sample);
+  const pair = resolveLanguagePair(
+    {
+      sourceLang: opts.sourceLang ?? settings.sourceLang,
+      targetLang: opts.targetLang ?? settings.targetLang,
+    },
+    sample,
+  );
+  const lang = pair.resolvedTarget;
   const translations = new Array(list.length).fill('');
+  let requestCount = 0;
 
   if (list.length === 1) {
-    const one = await translateOne(settings, list[0], { targetLang: lang, signal });
+    const one = await translateOne(settings, list[0], {
+      sourceLang: pair.sourceLang,
+      targetLang: lang,
+      signal,
+    });
     translations[0] = one.text;
     onProgress?.({ done: 1, total: 1 });
-    return { translations, targetLang: lang };
+    return {
+      translations,
+      sourceLang: pair.resolvedSource,
+      targetLang: lang,
+      usage: one.usage,
+      requestCount: 1,
+    };
   }
 
   const batches = chunkTexts(list, limits);
   let done = 0;
   let cursor = 0;
+  let usage = normalizeUsage(null);
   const concurrency = Math.max(1, Math.min(limits.concurrency || 3, batches.length));
   let firstError = null;
 
@@ -217,9 +262,11 @@ export async function translateTexts(settings, texts, opts = {}) {
       const indices = batches[batchIndex];
       const payload = indices.map((i) => list[i]);
       try {
-        const out = await translateBatch(settings, payload, lang, signal);
+        const out = await translateBatch(settings, payload, lang, signal, pair.sourceLang);
+        requestCount += 1;
+        usage = mergeUsage(usage, out.usage);
         indices.forEach((globalIndex, k) => {
-          translations[globalIndex] = out[k] ?? '';
+          translations[globalIndex] = out.items[k] ?? '';
         });
         done += 1;
         onProgress?.({ done, total: batches.length });
@@ -243,7 +290,14 @@ export async function translateTexts(settings, texts, opts = {}) {
     const fixes = await Promise.all(
       pending.map(async (index) => {
         try {
-          const fixed = await translateOne(settings, list[index], { targetLang: lang, signal, strong: true });
+          const fixed = await translateOne(settings, list[index], {
+            sourceLang: pair.sourceLang,
+            targetLang: lang,
+            signal,
+            strong: true,
+          });
+          requestCount += 1;
+          usage = mergeUsage(usage, fixed.usage);
           return [index, fixed.text];
         } catch {
           return [index, null];
@@ -255,5 +309,11 @@ export async function translateTexts(settings, texts, opts = {}) {
     }
   }
 
-  return { translations, targetLang: lang };
+  return {
+    translations,
+    sourceLang: pair.resolvedSource,
+    targetLang: lang,
+    usage,
+    requestCount,
+  };
 }

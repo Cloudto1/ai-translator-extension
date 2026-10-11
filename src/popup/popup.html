@@ -47,11 +47,18 @@
           </button>
 
           <div class="card">
-            <label class="field">
-              <span class="field-label">目标语言</span>
-              <select id="targetLang"></select>
-            </label>
-            <p class="hint">自动 = 中 ⇄ 英 互译：中文内容译成英文，其它语言译成中文。</p>
+            <div class="lang-row">
+              <label class="field">
+                <span class="field-label">源语言</span>
+                <select id="sourceLang"></select>
+              </label>
+              <button class="ghost icon-btn" id="swapLang" type="button" title="交换源语言与目标语言">⇄</button>
+              <label class="field">
+                <span class="field-label">目标语言</span>
+                <select id="targetLang"></select>
+              </label>
+            </div>
+            <p class="hint" id="langHint">自动 = 中 ⇄ 英 互译：中文内容译成英文，其它语言译成中文。</p>
             <label class="switch">
               <input type="checkbox" id="autoTranslateSelection" />
               <span class="track"></span>
@@ -114,6 +121,10 @@
           <p class="saved" id="savedHint">设置会自动保存</p>
         </section>
       </main>
+
+      <footer class="foot">
+        <button class="link-btn" id="openOptions" type="button">打开管理面板 · 翻译记录与 Token 统计</button>
+      </footer>
     </div>
 
     <script type="module" src="popup.js"></script>

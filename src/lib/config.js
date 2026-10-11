@@ -10,12 +10,15 @@ export const DEFAULT_SETTINGS = Object.freeze({
   apiKey: '',
   baseUrl: 'https://api.deepseek.com',
   model: 'deepseek-flash',
+  // 语言配置
+  sourceLang: 'auto', // auto 表示由模型自动识别
+  targetLang: 'auto', // auto 表示中 ⇄ 英 互译
   // 行为配置
-  targetLang: 'auto', // auto | zh | zh-TW | en | ja | ko | fr | de | es | ru
   disableThinking: true, // 关闭推理模型的思考过程，显著提升翻译速度
   autoTranslateSelection: false, // 划词后自动翻译（无需点击按钮）
   pageMode: 'replace', // replace（替换原文） | bilingual（双语对照）
   summaryLength: 'medium', // short | medium | detailed
+  historyLimit: 300, // 本地翻译历史最多保留条数
 });
 
 export const RUNTIME_LIMITS = Object.freeze({
@@ -67,8 +70,11 @@ export function normalizeSettings(raw) {
   s.baseUrl = String(s.baseUrl || '').trim() || DEFAULT_SETTINGS.baseUrl;
   s.model = String(s.model || '').trim() || DEFAULT_SETTINGS.model;
   if (!LANGUAGE_NAMES[s.targetLang]) s.targetLang = DEFAULT_SETTINGS.targetLang;
+  if (!LANGUAGE_NAMES[s.sourceLang]) s.sourceLang = DEFAULT_SETTINGS.sourceLang;
   if (s.pageMode !== 'bilingual') s.pageMode = 'replace';
   if (!['short', 'medium', 'detailed'].includes(s.summaryLength)) s.summaryLength = 'medium';
+  const limit = Number(s.historyLimit);
+  s.historyLimit = Number.isFinite(limit) && limit >= 20 ? Math.min(Math.round(limit), 2000) : DEFAULT_SETTINGS.historyLimit;
   s.disableThinking = !isFalsy(s.disableThinking);
   s.autoTranslateSelection = isTruthy(s.autoTranslateSelection);
   return s;

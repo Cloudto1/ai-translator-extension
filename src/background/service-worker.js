@@ -6,7 +6,8 @@
  */
 
 import { MSG, PORT_NAME, REQ, EVT } from '../lib/protocol.js';
-import { getSettings, saveSettings, resetSettings } from '../lib/storage.js';
+import { getSettings, saveSettings, resetSettings, appendHistory } from '../lib/storage.js';
+import { makeEntry } from '../lib/history.js';
 import { translateTexts, translateOne } from '../lib/translate.js';
 import { summarizePage } from '../lib/summarize.js';
 import { testConnection } from '../lib/api.js';
@@ -68,6 +69,19 @@ async function ensureContent(tabId) {
   } catch (err) {
     console.warn('[AI翻译] 注入内容脚本失败：', err);
     return false;
+  }
+}
+
+/**
+ * 记录一次翻译/总结到历史，用于管理面板的历史列表与 Token 统计。
+ * 历史写入失败不影响主流程。
+ */
+async function recordHistory(fields) {
+  try {
+    const settings = await getSettings();
+    await appendHistory(makeEntry(fields), settings.historyLimit);
+  } catch (err) {
+    console.warn('[AI翻译] 记录历史失败：', err);
   }
 }
 
@@ -204,43 +218,107 @@ chrome.runtime.onConnect.addListener((port) => {
 
     const controller = new AbortController();
     controllers.set(id, controller);
+    const startedAt = Date.now();
+    const meta = payload?.meta || {};
 
     try {
       const settings = await getSettings();
       assertConfigured(settings);
 
       if (type === REQ.TRANSLATE_TEXTS) {
-        const { translations, targetLang } = await translateTexts(settings, payload?.texts || [], {
+        const texts = payload?.texts || [];
+        const result = await translateTexts(settings, texts, {
+          sourceLang: payload?.sourceLang,
           targetLang: payload?.targetLang,
           signal: controller.signal,
           limits: RUNTIME_LIMITS,
           onProgress: (progress) => post({ id, type: 'PROGRESS', data: progress }),
         });
-        post({ id, type: EVT.RESULT, data: { translations, targetLang } });
+        post({
+          id,
+          type: EVT.RESULT,
+          data: {
+            translations: result.translations,
+            sourceLang: result.sourceLang,
+            targetLang: result.targetLang,
+            usage: result.usage,
+          },
+        });
+        await recordHistory({
+          kind: 'page',
+          ts: startedAt,
+          durationMs: Date.now() - startedAt,
+          model: settings.model,
+          sourceLang: result.sourceLang,
+          targetLang: result.targetLang,
+          itemCount: texts.length,
+          inputChars: texts.reduce((sum, t) => sum + String(t || '').length, 0),
+          outputChars: result.translations.reduce((sum, t) => sum + String(t || '').length, 0),
+          tokens: result.usage,
+          url: meta.url || '',
+          title: meta.title || '',
+          sourcePreview: texts.join(' '),
+          resultPreview: result.translations.join(' '),
+        });
         return;
       }
 
       if (type === REQ.TRANSLATE_ONE) {
-        const result = await translateOne(settings, payload?.text || '', {
+        const sourceText = payload?.text || '';
+        const result = await translateOne(settings, sourceText, {
+          sourceLang: payload?.sourceLang,
           targetLang: payload?.targetLang,
           signal: controller.signal,
           onDelta: (delta, full) => post({ id, type: EVT.DELTA, data: { delta, full } }),
         });
         post({ id, type: EVT.RESULT, data: result });
+        await recordHistory({
+          kind: 'selection',
+          ts: startedAt,
+          durationMs: Date.now() - startedAt,
+          model: settings.model,
+          sourceLang: result.sourceLang,
+          targetLang: result.targetLang,
+          itemCount: 1,
+          inputChars: sourceText.length,
+          outputChars: result.text.length,
+          tokens: result.usage,
+          url: meta.url || '',
+          title: meta.title || '',
+          sourcePreview: sourceText,
+          resultPreview: result.text,
+        });
         return;
       }
 
       if (type === REQ.SUMMARIZE) {
+        const pageText = payload?.text || '';
         const result = await summarizePage(settings, {
           title: payload?.title || '',
           url: payload?.url || '',
-          text: payload?.text || '',
+          text: pageText,
           targetLang: payload?.targetLang,
           length: payload?.length,
           signal: controller.signal,
           onDelta: (delta, full) => post({ id, type: EVT.DELTA, data: { delta, full } }),
         });
         post({ id, type: EVT.RESULT, data: result });
+        await recordHistory({
+          kind: 'summary',
+          ts: startedAt,
+          durationMs: Date.now() - startedAt,
+          model: settings.model,
+          sourceLang: result.sourceLang,
+          targetLang: result.targetLang,
+          itemCount: 1,
+          inputChars: pageText.length,
+          outputChars: result.summary.length,
+          tokens: result.usage,
+          url: payload?.url || '',
+          title: payload?.title || '',
+          sourcePreview: payload?.title || pageText,
+          resultPreview: result.summary,
+        });
         return;
       }
 

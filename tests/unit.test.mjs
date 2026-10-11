@@ -9,7 +9,28 @@ import {
   validateSettings,
   DEFAULT_SETTINGS,
 } from '../src/lib/config.js';
-import { detectLanguage, resolveTargetLang, buildBatchTranslateMessages } from '../src/lib/prompts.js';
+import {
+  detectLanguage,
+  resolveTargetLang,
+  buildBatchTranslateMessages,
+  buildTranslateMessages,
+  resolveLanguagePair,
+  languageHint,
+} from '../src/lib/prompts.js';
+import {
+  makeEntry,
+  pruneHistory,
+  sumEntries,
+  computeStats,
+  formatNumber,
+  compactNumber,
+  formatDuration,
+  formatRelativeTime,
+  formatTime,
+  kindLabel,
+  PREVIEW_LIMIT,
+} from '../src/lib/history.js';
+import { normalizeUsage, mergeUsage } from '../src/lib/api.js';
 import {
   chunkTexts,
   parseTranslationArray,
@@ -126,4 +147,181 @@ test('buildBatchTranslateMessages 生成稳定的批次提示词', () => {
   assert.match(messages[0].content, /exactly 2 items/);
   assert.match(messages[1].content, /\[0\] Hello/);
   assert.match(messages[1].content, /\[1\] World/);
+});
+
+/* ------------------------------------------------------------------ */
+/* 源语言 / 目标语言                                                    */
+/* ------------------------------------------------------------------ */
+
+test('resolveLanguagePair 处理自动识别与中英互译', () => {
+  const auto = resolveLanguagePair({ sourceLang: 'auto', targetLang: 'auto' }, 'Hello world, this is English.');
+  assert.equal(auto.sourceLang, 'auto');
+  assert.equal(auto.resolvedSource, 'en');
+  assert.equal(auto.resolvedTarget, 'zh');
+
+  const autoZh = resolveLanguagePair({ sourceLang: 'auto', targetLang: 'auto' }, '这是一句中文。');
+  assert.equal(autoZh.resolvedSource, 'zh');
+  assert.equal(autoZh.resolvedTarget, 'en');
+});
+
+test('resolveLanguagePair 支持固定语言对并处理同语言冲突', () => {
+  const fixed = resolveLanguagePair({ sourceLang: 'en', targetLang: 'ja' }, 'Hello');
+  assert.equal(fixed.sourceLang, 'en');
+  assert.equal(fixed.targetLang, 'ja');
+  assert.equal(fixed.resolvedTarget, 'ja');
+  assert.equal(fixed.swapped, false);
+
+  // 源语言与目标语言相同时自动反向，避免出现「中文译中文」
+  const conflict = resolveLanguagePair({ sourceLang: 'zh', targetLang: 'zh' }, '你好');
+  assert.equal(conflict.swapped, true);
+  assert.equal(conflict.resolvedTarget, 'en');
+
+  const conflictEn = resolveLanguagePair({ sourceLang: 'en', targetLang: 'en' }, 'hi');
+  assert.equal(conflictEn.resolvedTarget, 'zh');
+});
+
+test('languageHint 会把源语言写进提示词', () => {
+  assert.match(languageHint('auto', 'zh'), /Detect the source language automatically/);
+  assert.match(languageHint('en', 'zh'), /text is in English/);
+  const messages = buildTranslateMessages('Hello', 'zh', { sourceLang: 'en' });
+  assert.match(messages[0].content, /into Simplified Chinese/);
+});
+
+/* ------------------------------------------------------------------ */
+/* 历史记录与 Token 统计                                                */
+/* ------------------------------------------------------------------ */
+
+const sampleEntries = [
+  {
+    id: 'a',
+    ts: new Date('2026-10-11T10:00:00').getTime(),
+    kind: 'page',
+    model: 'deepseek-flash',
+    inputChars: 1000,
+    outputChars: 800,
+    durationMs: 3000,
+    tokens: { prompt: 500, completion: 600, total: 1100 },
+  },
+  {
+    id: 'b',
+    ts: new Date('2026-10-11T11:00:00').getTime(),
+    kind: 'selection',
+    model: 'deepseek-flash',
+    inputChars: 50,
+    outputChars: 60,
+    durationMs: 800,
+    tokens: { prompt: 20, completion: 30, total: 50 },
+  },
+  {
+    id: 'c',
+    ts: new Date('2026-10-09T09:00:00').getTime(),
+    kind: 'summary',
+    model: 'gpt-4o-mini',
+    inputChars: 5000,
+    outputChars: 400,
+    durationMs: 5200,
+    tokens: { prompt: 2000, completion: 300, total: 2300 },
+  },
+];
+
+test('makeEntry 会清洗字段并截断预览', () => {
+  const entry = makeEntry({
+    kind: 'selection',
+    sourcePreview: 'a'.repeat(900),
+    resultPreview: 'b',
+    tokens: { prompt_tokens: 10, completion_tokens: 5 },
+    inputChars: -5,
+  });
+  assert.equal(entry.sourcePreview.length, PREVIEW_LIMIT + 1, '超长预览应被截断并加省略号');
+  assert.equal(entry.truncated, true);
+  assert.equal(entry.inputChars, 0);
+  assert.deepEqual(entry.tokens, { prompt: 10, completion: 5, total: 15 });
+  assert.ok(entry.id && entry.ts > 0);
+});
+
+test('pruneHistory 按上限截断', () => {
+  const list = Array.from({ length: 30 }, (_, i) => ({ id: String(i), ts: 1000 - i }));
+  assert.equal(pruneHistory(list, 20).length, 20);
+  assert.equal(pruneHistory(list, 20)[0].id, '0', '应保留最新的记录');
+  assert.equal(pruneHistory(list, 5).length, 5);
+  assert.equal(pruneHistory(null, 20).length, 0);
+});
+
+test('sumEntries 汇总次数、Token 与耗时', () => {
+  const total = sumEntries(sampleEntries);
+  assert.equal(total.count, 3);
+  assert.deepEqual(total.tokens, { prompt: 2520, completion: 930, total: 3450 });
+  assert.equal(total.inputChars, 6050);
+  assert.equal(total.outputChars, 1260);
+  assert.equal(total.avgDurationMs, 3000);
+  assert.deepEqual(sumEntries([]).tokens, { prompt: 0, completion: 0, total: 0 });
+});
+
+test('computeStats 生成总计、分类与每日趋势', () => {
+  const now = new Date('2026-10-11T20:00:00').getTime();
+  const stats = computeStats(sampleEntries, { days: 7, now });
+
+  assert.equal(stats.total.count, 3);
+  assert.equal(stats.today.count, 2, '今天应有 2 条');
+  assert.equal(stats.today.tokens.total, 1150);
+  assert.equal(stats.week.count, 3);
+
+  const kinds = stats.byKind.map((item) => item.kind).sort();
+  assert.deepEqual(kinds, ['page', 'selection', 'summary']);
+  const page = stats.byKind.find((item) => item.kind === 'page');
+  assert.equal(page.tokens.total, 1100);
+  assert.equal(page.label, '整页翻译');
+
+  assert.equal(stats.daily.length, 7, '应补齐 7 天');
+  assert.equal(stats.daily.at(-1).date, '2026-10-11');
+  assert.equal(stats.daily.at(-1).count, 2);
+  assert.equal(stats.daily.at(-1).tokens, 1150);
+  assert.equal(stats.daily.at(-3).date, '2026-10-09');
+  assert.equal(stats.daily[0].count, 0, '没有记录的日期应补 0');
+
+  // 按 Token 从高到低排序：gpt-4o-mini(2300) > deepseek-flash(1150)
+  assert.equal(stats.byModel[0].model, 'gpt-4o-mini');
+  assert.equal(stats.byModel[0].tokens.total, 2300);
+  assert.equal(stats.byModel[1].model, 'deepseek-flash');
+  assert.equal(stats.byModel[1].count, 2);
+});
+
+test('数字与时间格式化', () => {
+  assert.equal(formatNumber(1234567), '1,234,567');
+  assert.equal(compactNumber(999), '999');
+  assert.equal(compactNumber(1500), '1.5k');
+  assert.equal(compactNumber(2300000), '2.30M');
+  assert.equal(formatDuration(800), '800 ms');
+  assert.equal(formatDuration(3400), '3.4 s');
+  assert.equal(formatRelativeTime(Date.now() - 30000), '刚刚');
+  assert.equal(formatTime(new Date('2026-10-11T08:05:00').getTime()), '2026-10-11 08:05');
+  assert.equal(kindLabel('summary'), '网页总结');
+});
+
+test('normalizeSettings 处理源语言与历史上限', () => {
+  assert.equal(normalizeSettings({ sourceLang: 'klingon' }).sourceLang, 'auto');
+  assert.equal(normalizeSettings({ sourceLang: 'en' }).sourceLang, 'en');
+  assert.equal(normalizeSettings({ historyLimit: 5 }).historyLimit, DEFAULT_SETTINGS.historyLimit);
+  assert.equal(normalizeSettings({ historyLimit: 500 }).historyLimit, 500);
+  assert.equal(normalizeSettings({ historyLimit: 99999 }).historyLimit, 2000);
+});
+
+test('normalizeUsage / mergeUsage 归一化各家用量格式', () => {
+  assert.deepEqual(normalizeUsage({ prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 }), {
+    prompt: 10,
+    completion: 20,
+    total: 30,
+  });
+  assert.deepEqual(normalizeUsage({ input_tokens: 5, output_tokens: 7 }), { prompt: 5, completion: 7, total: 12 });
+  assert.deepEqual(normalizeUsage(null), { prompt: 0, completion: 0, total: 0 });
+  assert.deepEqual(
+    mergeUsage({ prompt: 1, completion: 2, total: 3 }, { prompt: 10, completion: 20, total: 30 }),
+    { prompt: 11, completion: 22, total: 33 },
+  );
+  // 归一化后的对象再次参与累加也不能出错
+  assert.deepEqual(mergeUsage({ prompt: 1, completion: 2, total: 3 }, normalizeUsage({ prompt_tokens: 4 })), {
+    prompt: 5,
+    completion: 2,
+    total: 7,
+  });
 });

@@ -2,7 +2,7 @@
  * 网页总结：正文提取 + 调用模型生成结构化摘要。
  */
 
-import { chatCompletion, ApiError } from './api.js';
+import { chatCompletion, ApiError, normalizeUsage } from './api.js';
 import { buildSummaryMessages, detectLanguage, resolveTargetLang } from './prompts.js';
 import { RUNTIME_LIMITS } from './config.js';
 
@@ -77,5 +77,10 @@ export async function summarizePage(settings, input) {
   if (!content) {
     throw new ApiError('模型没有返回总结内容，请重试。', 'EMPTY_RESULT');
   }
-  return { summary: content, targetLang, detectedLang: detectLanguage(body), usage: result.usage };
+  return {
+    summary: content,
+    sourceLang: detectLanguage(body),
+    targetLang,
+    usage: normalizeUsage(result.usage),
+  };
 }

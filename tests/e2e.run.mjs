@@ -475,6 +475,200 @@ async function main() {
     await popup.close().catch(() => {});
   });
 
+  log('\n【7】管理面板（配置 / 语言 / 历史 / Token 统计）');
+  let optionsPage;
+
+  await step('打开管理面板并完成首屏渲染', async () => {
+    await sw.evaluate(() => chrome.storage.local.set({ ait_history: [] }));
+    optionsPage = await ctx.newPage();
+    optionsPage.on('dialog', (dialog) => dialog.accept());
+    await optionsPage.goto(`chrome-extension://${extensionId}/src/options/options.html`);
+    await optionsPage.waitForSelector('.nav-item[data-view="dashboard"]');
+
+    const navCount = await optionsPage.locator('.nav-item').count();
+    assert(navCount === 4, `导航项数量异常：${navCount}`);
+    const stats = await optionsPage.locator('.stat').count();
+    assert(stats === 4, `统计卡片数量异常：${stats}`);
+    assert((await optionsPage.locator('.chart-col').count()) === 14, '趋势图应渲染 14 天');
+    const conn = await optionsPage.textContent('#connStatus');
+    assert(conn.includes('已配置'), `连接状态异常：${conn}`);
+
+    await optionsPage.click('.nav-item[data-view="history"]');
+    assert(await optionsPage.locator('#historyList .empty').isVisible(), '空历史应显示空状态');
+    await optionsPage.click('.nav-item[data-view="dashboard"]');
+  });
+
+  await step('管理面板可切换源语言与目标语言并写回配置', async () => {
+    await optionsPage.click('.nav-item[data-view="language"]');
+    await optionsPage.waitForSelector('#sourceLang');
+    const langOptions = await optionsPage.locator('#sourceLang option').count();
+    assert(langOptions >= 8, `语言选项异常：${langOptions}`);
+
+    await optionsPage.selectOption('#sourceLang', 'en');
+    await optionsPage.selectOption('#targetLang', 'ja');
+    await waitFor(
+      async () => {
+        const s = await readSettings();
+        return s?.sourceLang === 'en' && s?.targetLang === 'ja';
+      },
+      { label: '语言设置写入 storage', timeout: 10000 },
+    );
+    const hint = await optionsPage.textContent('#langHint');
+    assert(hint.includes('English') && hint.includes('日本語'), `语言提示异常：${hint}`);
+
+    await optionsPage.click('#swapLang');
+    await waitFor(
+      async () => {
+        const s = await readSettings();
+        return s?.sourceLang === 'ja' && s?.targetLang === 'en';
+      },
+      { label: '交换语言', timeout: 10000 },
+    );
+
+    await optionsPage.click('.chip[data-pair="en|zh"]');
+    await waitFor(
+      async () => {
+        const s = await readSettings();
+        return s?.sourceLang === 'en' && s?.targetLang === 'zh';
+      },
+      { label: '常用语言组合', timeout: 10000 },
+    );
+    await optionsPage.screenshot({ path: path.join(ARTIFACTS, 'options-language.png') });
+  });
+
+  await step('管理面板可测试 API 连接', async () => {
+    await optionsPage.click('.nav-item[data-view="api"]');
+    await optionsPage.waitForSelector('#testBtn');
+    await optionsPage.click('#testBtn');
+    const text = await waitFor(
+      async () => {
+        const t = (await optionsPage.textContent('#testResult')) || '';
+        return t.includes('连接成功') || t.includes('失败') ? t : null;
+      },
+      { label: '管理面板连接测试', timeout: 40000 },
+    );
+    assert(text.includes('连接成功'), `测试连接失败：${text}`);
+    await optionsPage.screenshot({ path: path.join(ARTIFACTS, 'options-api.png') });
+  });
+
+  await step('翻译后历史记录自动出现（无需刷新面板）', async () => {
+    await page.goto(`${baseUrl}/en`);
+    await waitFor(async () => page.locator('#p1').isVisible(), { label: '测试页面加载' });
+    await page.evaluate(() => {
+      const node = document.getElementById('p1');
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, composed: true }));
+    });
+    const btn = page.locator('.ait-selbtn');
+    await btn.waitFor({ state: 'visible', timeout: 10000 });
+    await btn.click();
+    await waitFor(
+      async () => (await page.getAttribute('.ait-card .ait-body', 'data-state')) === 'done',
+      { label: '划词翻译完成', timeout: 60000 },
+    );
+
+    await optionsPage.click('.nav-item[data-view="history"]');
+    await optionsPage.waitForSelector('.history-item', { timeout: 15000 });
+    const count = await optionsPage.locator('.history-item').count();
+    assert(count === 1, `历史记录数量应为 1，实际 ${count}`);
+
+    const itemText = await optionsPage.textContent('.history-item');
+    assert(itemText.includes('划词翻译'), `记录类型异常：${itemText}`);
+    assert(/Token/.test(itemText), '记录应展示 Token 消耗');
+    const badge = await optionsPage.textContent('#historyBadge');
+    assert(badge.trim() === '1', `侧边栏徽标异常：${badge}`);
+    await optionsPage.screenshot({ path: path.join(ARTIFACTS, 'options-history.png') });
+  });
+
+  await step('Token 统计随使用情况更新', async () => {
+    await optionsPage.click('.nav-item[data-view="dashboard"]');
+    await waitFor(
+      async () => {
+        const text = await optionsPage.textContent('#statGrid');
+        return /总 Token/.test(text) ? text : null;
+      },
+      { label: '统计数据渲染', timeout: 10000 },
+    );
+    const values = await optionsPage.locator('.stat .stat-value').allTextContents();
+    assert(values[0] === '1', `调用次数应为 1，实际「${values[0]}」`);
+    assert(values[1] !== '0', `总 Token 应大于 0，实际「${values[1]}」`);
+
+    const bars = await optionsPage.locator('.chart-col').count();
+    assert(bars === 14, `趋势图应有 14 天，实际 ${bars}`);
+    const today = await optionsPage.locator('.chart-col:last-child').getAttribute('title');
+    assert(/\d+ Token/.test(today), `今日柱状图信息异常：${today}`);
+    assert(/[1-9]/.test(today), `今日应统计到 Token：${today}`);
+    const todayBar = await optionsPage.locator('.chart-col:last-child').getAttribute('class');
+    assert(!todayBar.includes('is-empty'), '今日应有 Token 消耗记录');
+
+    const kindText = await optionsPage.textContent('#kindDist');
+    assert(kindText.includes('划词翻译'), `功能分布异常：${kindText}`);
+    await optionsPage.screenshot({ path: path.join(ARTIFACTS, 'options-dashboard.png') });
+  });
+
+  await step('历史筛选、搜索与删除', async () => {
+    await optionsPage.click('.nav-item[data-view="history"]');
+    await optionsPage.selectOption('#historyKind', 'summary');
+    assert(await optionsPage.locator('#historyList .empty').isVisible(), '筛选为「网页总结」时应为空');
+
+    await optionsPage.selectOption('#historyKind', 'all');
+    await optionsPage.fill('#historySearch', '不可能出现的字符串xyz');
+    assert(await optionsPage.locator('#historyList .empty').isVisible(), '搜索无结果时应为空');
+    await optionsPage.fill('#historySearch', '');
+    await optionsPage.waitForSelector('.history-item');
+
+    await optionsPage.click('.history-item [data-action="delete"]');
+    await waitFor(
+      async () => (await optionsPage.locator('.history-item').count()) === 0,
+      { label: '删除记录', timeout: 10000 },
+    );
+    const stored = await sw.evaluate(async () => (await chrome.storage.local.get('ait_history')).ait_history?.length ?? 0);
+    assert(stored === 0, `storage 中应已清空，实际 ${stored}`);
+  });
+
+  await step('导航高亮与当前视图保持一致', async () => {
+    for (const name of ['dashboard', 'history', 'language', 'api']) {
+      await optionsPage.click(`.nav-item[data-view="${name}"]`);
+      await optionsPage.waitForTimeout(220);
+      const activeView = await optionsPage.locator('.view.is-active').getAttribute('data-view');
+      assert(activeView === name, `内容区应显示 ${name}，实际 ${activeView}`);
+      const activeNav = await optionsPage.locator('.nav-item.is-active').getAttribute('data-view');
+      assert(activeNav === name, `侧边栏高亮应为 ${name}，实际 ${activeNav}`);
+      const highlighted = await optionsPage.locator('.nav-item.is-active').count();
+      assert(highlighted === 1, `高亮项应唯一，实际 ${highlighted}`);
+    }
+  });
+
+  await step('popup 语言切换与管理面板入口', async () => {
+    const popup = await ctx.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+    await popup.waitForSelector('#sourceLang', { state: 'visible' });
+    await popup.selectOption('#sourceLang', 'zh');
+    await waitFor(
+      async () => (await readSettings())?.sourceLang === 'zh',
+      { label: 'popup 源语言写入', timeout: 10000 },
+    );
+    await popup.selectOption('#sourceLang', 'auto');
+    await popup.selectOption('#targetLang', 'auto');
+
+    assert(await popup.locator('#openOptions').isVisible(), 'popup 应有管理面板入口');
+    // openOptionsPage 会复用已打开的管理面板标签页，这里先关闭以便验证新开页面
+    await optionsPage.close().catch(() => {});
+    const [opened] = await Promise.all([
+      ctx.waitForEvent('page', { timeout: 15000 }),
+      popup.click('#openOptions', { noWaitAfter: true }),
+    ]);
+    await opened.waitForLoadState('domcontentloaded');
+    assert(opened.url().includes('/src/options/options.html'), `应打开管理面板，实际 ${opened.url()}`);
+    await opened.waitForSelector('.nav-item[data-view="dashboard"]');
+    await opened.close().catch(() => {});
+    await popup.close().catch(() => {});
+  });
+
   const failed = results.filter((r) => !r.ok);
   log(`\n=== 结果：${results.length - failed.length}/${results.length} 通过 ===`);
   if (failed.length) {

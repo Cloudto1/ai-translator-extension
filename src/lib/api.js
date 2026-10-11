@@ -40,6 +40,26 @@ export function describeHttpError(status, bodyText) {
   return [`请求失败（HTTP ${status}）`, hint, detail].filter(Boolean).join(' ');
 }
 
+/** 把各家格式各异的 usage 归一化成 { prompt, completion, total }。 */
+export function normalizeUsage(usage) {
+  if (!usage) return { prompt: 0, completion: 0, total: 0 };
+  const prompt = Number(usage.prompt_tokens ?? usage.prompt ?? usage.input_tokens ?? 0) || 0;
+  const completion = Number(usage.completion_tokens ?? usage.completion ?? usage.output_tokens ?? 0) || 0;
+  const total = Number(usage.total_tokens ?? usage.total ?? 0) || prompt + completion;
+  return { prompt, completion, total: total || prompt + completion };
+}
+
+/** 累加两次调用的用量。 */
+export function mergeUsage(a, b) {
+  const x = normalizeUsage(a);
+  const y = normalizeUsage(b);
+  return {
+    prompt: x.prompt + y.prompt,
+    completion: x.completion + y.completion,
+    total: x.total + y.total,
+  };
+}
+
 function mergeSignals(signals) {
   const valid = signals.filter(Boolean);
   if (valid.length === 0) return undefined;
@@ -56,7 +76,7 @@ function mergeSignals(signals) {
   return controller.signal;
 }
 
-function buildBody({ model, messages, temperature, maxTokens, stream, disableThinking }) {
+function buildBody({ model, messages, temperature, maxTokens, stream, disableThinking, includeUsage }) {
   const body = {
     model,
     messages,
@@ -65,6 +85,8 @@ function buildBody({ model, messages, temperature, maxTokens, stream, disableThi
   };
   if (typeof temperature === 'number') body.temperature = temperature;
   if (disableThinking) body.thinking = { type: 'disabled' };
+  // 流式响应默认不带用量，显式要求服务端在最后一个分片里返回
+  if (stream && includeUsage) body.stream_options = { include_usage: true };
   return body;
 }
 
@@ -73,6 +95,7 @@ function isUnsupportedParamError(status, text) {
   if (status !== 400 && status !== 422) return null;
   const lower = String(text || '').toLowerCase();
   if (lower.includes('thinking')) return 'thinking';
+  if (lower.includes('stream_options')) return 'stream_options';
   if (lower.includes('temperature')) return 'temperature';
   if (lower.includes('max_tokens') || lower.includes('max tokens')) return 'max_tokens';
   return null;
@@ -103,6 +126,7 @@ export async function chatCompletion(opts) {
     maxTokens = 4096,
     stream = false,
     disableThinking = false,
+    includeUsage = true,
     onDelta,
     signal,
     timeoutMs = 90000,
@@ -131,6 +155,7 @@ export async function chatCompletion(opts) {
         maxTokens: retry.maxTokens ?? maxTokens,
         stream,
         disableThinking: retry.disableThinking,
+        includeUsage: retry.includeUsage ?? includeUsage,
       });
 
       let res;
@@ -158,6 +183,7 @@ export async function chatCompletion(opts) {
         if (unsupported && attempt < 2) {
           // 部分第三方网关不支持这些参数，去掉后重试
           if (unsupported === 'thinking') retry.disableThinking = false;
+          else if (unsupported === 'stream_options') retry.includeUsage = false;
           else if (unsupported === 'temperature') retry.temperature = undefined;
           else if (unsupported === 'max_tokens') retry.maxTokens = undefined;
           lastError = new ApiError(describeHttpError(res.status, text), `HTTP_${res.status}`);

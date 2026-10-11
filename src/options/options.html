@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI 翻译助手 · 管理面板</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="logo">译</span>
+          <div>
+            <h1>AI 翻译助手</h1>
+            <p>管理面板</p>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item is-active" data-view="dashboard" type="button">
+            <span class="nav-icon">▤</span><span>概览与统计</span>
+          </button>
+          <button class="nav-item" data-view="history" type="button">
+            <span class="nav-icon">☰</span><span>翻译记录</span><span class="nav-badge" id="historyBadge">0</span>
+          </button>
+          <button class="nav-item" data-view="language" type="button">
+            <span class="nav-icon">文</span><span>语言设置</span>
+          </button>
+          <button class="nav-item" data-view="api" type="button">
+            <span class="nav-icon">⚙</span><span>API 设置</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <p class="conn" id="connStatus"><i class="dot"></i><span>正在读取配置…</span></p>
+          <p class="muted">版本 1.1.0</p>
+        </div>
+      </aside>
+
+      <main class="content">
+        <!-- 概览 -->
+        <section class="view is-active" data-view="dashboard">
+          <header class="view-head">
+            <div>
+              <h2>概览与统计</h2>
+              <p class="muted">Token 消耗、调用次数与最近的使用情况</p>
+            </div>
+            <div class="view-actions">
+              <select id="statsRange" class="input input-sm" title="统计周期">
+                <option value="7">近 7 天</option>
+                <option value="14" selected>近 14 天</option>
+                <option value="30">近 30 天</option>
+              </select>
+            </div>
+          </header>
+
+          <div class="stat-grid" id="statGrid"></div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>Token 消耗趋势</h3>
+              <span class="muted" id="chartHint"></span>
+            </div>
+            <div class="chart" id="tokenChart"></div>
+          </div>
+
+          <div class="two-col">
+            <div class="card">
+              <div class="card-head"><h3>按功能分布</h3></div>
+              <div class="dist" id="kindDist"></div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>按模型分布</h3></div>
+              <div class="dist" id="modelDist"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 翻译记录 -->
+        <section class="view" data-view="history">
+          <header class="view-head">
+            <div>
+              <h2>翻译记录</h2>
+              <p class="muted" id="historySummary">最近 300 条翻译与总结</p>
+            </div>
+            <div class="view-actions">
+              <input id="historySearch" class="input input-sm" type="search" placeholder="搜索原文或译文…" />
+              <select id="historyKind" class="input input-sm">
+                <option value="all">全部类型</option>
+                <option value="page">整页翻译</option>
+                <option value="selection">划词翻译</option>
+                <option value="summary">网页总结</option>
+              </select>
+              <button class="btn btn-danger" id="clearHistory" type="button">清空记录</button>
+            </div>
+          </header>
+          <div class="history-list" id="historyList"></div>
+        </section>
+
+        <!-- 语言设置 -->
+        <section class="view" data-view="language">
+          <header class="view-head">
+            <div>
+              <h2>语言设置</h2>
+              <p class="muted">设置翻译的源语言与目标语言</p>
+            </div>
+          </header>
+
+          <div class="card">
+            <div class="lang-row">
+              <label class="field">
+                <span class="field-label">源语言</span>
+                <select id="sourceLang" class="input"></select>
+              </label>
+              <button class="btn btn-icon" id="swapLang" type="button" title="交换源语言与目标语言">⇄</button>
+              <label class="field">
+                <span class="field-label">目标语言</span>
+                <select id="targetLang" class="input"></select>
+              </label>
+            </div>
+            <p class="hint" id="langHint"></p>
+            <div class="quick-pairs" id="quickPairs">
+              <span class="muted">常用组合：</span>
+              <button class="chip" data-pair="auto|auto" type="button">自动 ⇄ 中英互译</button>
+              <button class="chip" data-pair="en|zh" type="button">英语 → 中文</button>
+              <button class="chip" data-pair="zh|en" type="button">中文 → 英语</button>
+              <button class="chip" data-pair="ja|zh" type="button">日语 → 中文</button>
+              <button class="chip" data-pair="zh|ja" type="button">中文 → 日语</button>
+              <button class="chip" data-pair="en|zh-TW" type="button">英语 → 繁體中文</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>翻译行为</h3>
+            <label class="field">
+              <span class="field-label">页面翻译方式</span>
+              <select id="pageMode" class="input">
+                <option value="replace">替换原文</option>
+                <option value="bilingual">双语对照（原文 + 译文）</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">总结详细程度</span>
+              <select id="summaryLength" class="input">
+                <option value="short">简短</option>
+                <option value="medium">标准</option>
+                <option value="detailed">详细</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">历史记录保留条数</span>
+              <input id="historyLimit" class="input" type="number" min="20" max="2000" step="10" />
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="autoTranslateSelection" />
+              <span class="track"></span>
+              <span>划词后自动翻译（无需点击按钮）</span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="disableThinking" />
+              <span class="track"></span>
+              <span>关闭模型思考过程（更快、更省 Token）</span>
+            </label>
+          </div>
+        </section>
+
+        <!-- API 设置 -->
+        <section class="view" data-view="api">
+          <header class="view-head">
+            <div>
+              <h2>API 设置</h2>
+              <p class="muted">兼容 OpenAI 协议，可对接任意兼容服务</p>
+            </div>
+          </header>
+
+          <div class="card">
+            <label class="field">
+              <span class="field-label">API Key</span>
+              <span class="input-row">
+                <input id="apiKey" class="input" type="password" autocomplete="off" spellcheck="false" placeholder="sk-..." />
+                <button class="btn" id="toggleKey" type="button">显示</button>
+              </span>
+            </label>
+            <label class="field">
+              <span class="field-label">Base URL</span>
+              <input id="baseUrl" class="input" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.deepseek.com" />
+            </label>
+            <label class="field">
+              <span class="field-label">模型</span>
+              <input id="model" class="input" type="text" autocomplete="off" spellcheck="false" placeholder="deepseek-flash" />
+            </label>
+            <p class="hint">
+              兼容 OpenAI 协议：填写任意兼容服务的 Key、Base URL 与模型 ID。
+              例如 DeepSeek 填 <code>https://api.deepseek.com</code> + <code>deepseek-flash</code>；
+              OpenAI 填 <code>https://api.openai.com/v1</code> + <code>gpt-4o-mini</code>。
+              URL 会自动补全为 <code>.../v1/chat/completions</code>。
+            </p>
+            <div class="row">
+              <button class="btn btn-primary" id="testBtn" type="button">测试连接</button>
+              <button class="btn" id="resetBtn" type="button">恢复默认设置</button>
+            </div>
+            <p class="result" id="testResult"></p>
+          </div>
+
+          <div class="card">
+            <h3>快捷键</h3>
+            <ul class="kv">
+              <li><span>翻译整个页面</span><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd></li>
+              <li><span>总结当前网页</span><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></li>
+              <li><span>翻译选中文本</span><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd></li>
+            </ul>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
