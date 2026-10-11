@@ -3,18 +3,50 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0B1120">
+<meta name="theme-color" content="#14161D">
 <title>AI 翻译助手 · 把整个网页，翻译成你的语言</title>
 <meta name="description" content="一款基于大模型的浏览器翻译扩展：全页面翻译、划词翻译、网页总结。兼容任意 OpenAI 协议服务，API Key 由你掌控，插件不收集任何数据。">
 <link rel="icon" type="image/png" sizes="48x48" href="icons/icon48.png">
 <link rel="apple-touch-icon" href="icons/icon128.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <a class="skip-link" href="#main">跳到主要内容</a>
+
+<!-- 图标精灵：与扩展同一套（24x24 / 1.75 描边 / 颜色随 currentColor）-->
+<svg class="icon-sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-globe" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18" />
+    <path d="M12 3c2.6 2.7 2.6 15.3 0 18" />
+    <path d="M12 3c-2.6 2.7-2.6 15.3 0 18" />
+  </symbol>
+  <symbol id="i-lines" viewBox="0 0 24 24">
+    <path d="M4 6h16" />
+    <path d="M4 12h11" />
+    <path d="M4 18h14" />
+  </symbol>
+  <symbol id="i-selection" viewBox="0 0 24 24">
+    <path d="M7 4H5.5A1.5 1.5 0 0 0 4 5.5V7" />
+    <path d="M17 4h1.5A1.5 1.5 0 0 1 20 5.5V7" />
+    <path d="M7 20H5.5A1.5 1.5 0 0 1 4 18.5V17" />
+    <path d="M17 20h1.5a1.5 1.5 0 0 0 1.5-1.5V17" />
+    <path d="M12 8v8" />
+    <path d="M9.5 8h5" />
+    <path d="M9.5 16h5" />
+  </symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24">
+    <path d="M12 4l1.6 4.4L18 10l-4.4 1.6L12 16l-1.6-4.4L6 10l4.4-1.6z" />
+    <path d="M18.5 15.6l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7z" />
+  </symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24">
+    <rect x="4.5" y="10.5" width="15" height="9.5" rx="2.5" />
+    <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+  </symbol>
+</svg>
 
 <header class="topbar" data-topbar>
   <div class="wrap topbar__inner">
@@ -41,14 +73,15 @@
   <section class="hero" id="top">
     <div class="grid-bg" aria-hidden="true"></div>
     <div class="hero__glow" aria-hidden="true"></div>
+    <div class="hero__glow hero__glow--b" aria-hidden="true"></div>
     <div class="wrap hero__inner">
       <div class="hero__copy">
-        <p class="hero__kicker mono"><span class="dot" aria-hidden="true"></span>兼容 OpenAI Chat Completions 协议，API Key 由你掌控</p>
+        <p class="eyebrow hero__kicker"><svg class="icon eyebrow__icon" aria-hidden="true"><use href="#i-sparkle" /></svg>AI 驱动 · 兼容 OpenAI 协议</p>
 
         <h1 class="hero__title">
           <span class="hero__source">Translate the whole page.</span>
           <span class="hero__sweep" aria-hidden="true"></span>
-          <span class="hero__result">把整个网页，翻译成你的语言</span>
+          <span class="hero__result"><span class="hero__result-text">把整个网页，翻译成你的语言</span></span>
         </h1>
 
         <p class="hero__lead">一款基于大模型的浏览器翻译扩展。整页翻译、划词翻译、网页总结，一个插件全部搞定——而且只在你说要翻的时候，才把你的文字发给你自己配置的模型服务。</p>
@@ -57,6 +90,12 @@
           <a class="btn btn--signal" href="https://github.com/Cloudto1/ai-translator-extension/archive/refs/heads/main.zip">下载扩展</a>
           <a class="btn btn--ghost" href="#install">查看安装步骤</a>
         </div>
+
+        <ul class="stats">
+          <li class="stat"><b class="stat__num">9</b><span class="stat__label">种目标语言</span></li>
+          <li class="stat"><b class="stat__num">3</b><span class="stat__label">种翻译方式</span></li>
+          <li class="stat"><b class="stat__num">0</b><span class="stat__label">数据上传</span></li>
+        </ul>
 
         <ul class="hero__keys">
           <li><span class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>T</kbd></span>翻译整页</li>
@@ -70,12 +109,12 @@
           <div class="mock__bar"><i></i><i></i><i></i><span class="mock__url mono">example.com/article</span></div>
           <div class="mock__body">
             <div class="tx">
-              <p class="tx__src" lang="en">Webb captured the sharpest infrared image of the early universe yet.</p>
-              <p class="tx__dst" lang="zh-CN">韦布望远镜拍下了迄今最清晰的早期宇宙红外图像。</p>
+              <p class="tx__src" lang="en"><span class="lang mono">EN</span>Webb captured the sharpest infrared image of the early universe yet.</p>
+              <p class="tx__dst" lang="zh-CN"><span class="lang mono">中</span>韦布望远镜拍下了迄今最清晰的早期宇宙红外图像。</p>
             </div>
             <div class="tx">
-              <p class="tx__src" lang="en">Some galaxies formed 300 million years after the Big Bang.</p>
-              <p class="tx__dst" lang="zh-CN">部分星系在大爆炸后仅 3 亿年就已形成。</p>
+              <p class="tx__src" lang="en"><span class="lang mono">EN</span>Some galaxies formed 300 million years after the Big Bang.</p>
+              <p class="tx__dst" lang="zh-CN"><span class="lang mono">中</span>部分星系在大爆炸后仅 3 亿年就已形成。</p>
             </div>
           </div>
         </div>
@@ -87,6 +126,7 @@
   <section class="section" id="intro">
     <div class="wrap split">
       <div class="split__head">
+        <p class="eyebrow"><svg class="icon eyebrow__icon" aria-hidden="true"><use href="#i-sparkle" /></svg>产品介绍</p>
         <h2 class="h2">它是什么</h2>
         <p class="split__en mono">What it is</p>
       </div>
@@ -115,13 +155,16 @@
   <section class="section section--ink" id="features">
     <div class="grid-bg" aria-hidden="true"></div>
     <div class="wrap">
-      <header class="sec-head">
-        <h2 class="h2">三种翻译方式</h2>
+      <header class="sec-head sec-head--center">
+        <p class="eyebrow"><svg class="icon eyebrow__icon" aria-hidden="true"><use href="#i-sparkle" /></svg>核心功能</p>
+        <h2 class="h2">三种翻译方式，覆盖所有场景</h2>
         <p class="sec-head__en mono">Three ways to read</p>
+        <p class="sec-head__lead">无论是通读整篇外文文章、随手查一个词，还是先判断长文值不值得读，都能一步完成。</p>
       </header>
 
       <article class="feature">
         <div class="feature__text">
+          <span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-globe" /></svg></span>
           <p class="feature__key mono"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>T</kbd></p>
           <h3 class="feature__t">全页面翻译</h3>
           <p class="feature__d">自动识别页面正文，分批调用模型翻译，长文也能边翻边读。可以「替换原文」，也可以「双语对照」——原文与译文逐段并排，再点一次即一键恢复原文。</p>
@@ -151,6 +194,7 @@
 
       <article class="feature feature--rev">
         <div class="feature__text">
+          <span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-selection" /></svg></span>
           <p class="feature__key mono"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>E</kbd></p>
           <h3 class="feature__t">划词翻译</h3>
           <p class="feature__d">选中任意文字，点一下悬浮按钮就有译文；也可以开启「划词后自动翻译」，选中即出结果。译文流式输出，支持一键复制。</p>
@@ -171,6 +215,7 @@
 
       <article class="feature">
         <div class="feature__text">
+          <span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-lines" /></svg></span>
           <p class="feature__key mono"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></p>
           <h3 class="feature__t">网页总结</h3>
           <p class="feature__d">抽取页面正文，生成「一句话总结 + 要点列表」，以流式方式展示在右侧抽屉里。长文、报告、论坛帖，几秒抓住重点。按 <kbd>Esc</kbd> 关闭。</p>
@@ -201,65 +246,75 @@
 
   <!-- ============ INSTALL ============ -->
   <section class="section" id="install">
-    <div class="wrap split">
-      <div class="split__head">
-        <h2 class="h2">安装</h2>
-        <p class="split__en mono">Install</p>
-        <p class="split__note">Edge / Chrome 110+，Manifest V3</p>
-      </div>
-      <div class="split__body">
-        <ol class="steps">
-          <li class="step">
-            <h3 class="step__t">下载扩展文件</h3>
-            <p class="step__d">从 GitHub 下载本项目的 ZIP 并解压到本地任意目录。解压后请确认目录根下能看到 <code>manifest.json</code>——它就是下一步要选择的文件夹。</p>
-            <div class="dl">
-              <a class="btn btn--signal btn--sm" href="https://github.com/Cloudto1/ai-translator-extension/archive/refs/heads/main.zip">下载 ZIP</a>
-              <a class="btn btn--outline btn--sm" href="https://github.com/Cloudto1/ai-translator-extension" target="_blank" rel="noopener noreferrer">在 GitHub 查看</a>
-            </div>
-            <p class="step__cmd mono">git clone https://github.com/Cloudto1/ai-translator-extension.git</p>
-          </li>
-          <li class="step">
-            <h3 class="step__t">打开扩展管理页</h3>
-            <p class="step__d">在地址栏输入 <code>edge://extensions/</code>（Chrome 则是 <code>chrome://extensions/</code>），打开左下角的「开发人员模式」。</p>
-          </li>
-          <li class="step">
-            <h3 class="step__t">加载解压缩的扩展</h3>
-            <p class="step__d">点击「加载解压缩的扩展」，选择包含 <code>manifest.json</code> 的项目根目录。</p>
-          </li>
-          <li class="step">
-            <h3 class="step__t">填写模型配置</h3>
-            <p class="step__d">点击工具栏中的扩展图标，在弹出的设置页填写三项信息。Base URL 会自动补全为 <code>…/v1/chat/completions</code>，直接粘贴完整端点也能识别。</p>
-            <div class="codecard mono">
-              <span><i>API Key</i><b>sk-xxxxxxxx</b></span>
-              <span><i>Base URL</i><b>https://api.deepseek.com</b></span>
-              <span><i>模型</i><b>deepseek-flash</b></span>
-            </div>
-          </li>
-          <li class="step">
-            <h3 class="step__t">测试连接</h3>
-            <p class="step__d">点击「测试连接」，看到「连接成功 · xxx ms」就可以开始用了。</p>
-          </li>
-        </ol>
+    <div class="wrap">
+      <header class="sec-head sec-head--center">
+        <p class="eyebrow"><svg class="icon eyebrow__icon" aria-hidden="true"><use href="#i-sparkle" /></svg>安装指南</p>
+        <h2 class="h2">四步装好，不用注册</h2>
+        <p class="sec-head__en mono">Install</p>
+        <p class="sec-head__lead">下载解压、加载到浏览器、填一次 API 配置即可。Edge 与 Chrome 110 及以上版本都支持。</p>
+      </header>
+
+      <ol class="steps">
+        <li class="step">
+          <h3 class="step__t">下载扩展文件</h3>
+          <p class="step__d">从 GitHub 下载 ZIP 并解压到本地任意目录。解压后确认根目录下能看到 <code>manifest.json</code>——它就是第三步要选的文件夹。</p>
+          <div class="dl">
+            <a class="btn btn--signal btn--sm" href="https://github.com/Cloudto1/ai-translator-extension/archive/refs/heads/main.zip">下载 ZIP</a>
+            <a class="btn btn--outline btn--sm" href="https://github.com/Cloudto1/ai-translator-extension" target="_blank" rel="noopener noreferrer">在 GitHub 查看</a>
+          </div>
+          <p class="step__cmd mono">git clone https://github.com/Cloudto1/ai-translator-extension.git</p>
+        </li>
+        <li class="step">
+          <h3 class="step__t">打开开发者模式</h3>
+          <p class="step__d">在地址栏输入 <code>edge://extensions/</code>（Chrome 则是 <code>chrome://extensions/</code>），打开页面左下角的「开发人员模式」。</p>
+        </li>
+        <li class="step">
+          <h3 class="step__t">加载扩展程序</h3>
+          <p class="step__d">点击「加载解压缩的扩展」，选择刚才解压出来、包含 <code>manifest.json</code> 的文件夹。</p>
+        </li>
+        <li class="step">
+          <h3 class="step__t">填写配置并测试连接</h3>
+          <p class="step__d">点击工具栏中的扩展图标，在设置页填写三项信息，再点「测试连接」。看到「连接成功」就可以开始用了。</p>
+          <div class="codecard mono">
+            <span><i>API Key</i><b>sk-xxxxxxxx</b></span>
+            <span><i>Base URL</i><b>https://api.deepseek.com</b></span>
+            <span><i>模型</i><b>deepseek-flash</b></span>
+          </div>
+        </li>
+      </ol>
+
+      <div class="note-card">
+        <svg class="icon note-card__icon" aria-hidden="true"><use href="#i-lock" /></svg>
+        <p>插件不收集、不上报任何数据。只有你主动触发翻译或总结时，才会把对应的文字发往你自己配置的服务商。</p>
       </div>
     </div>
   </section>
 
   <!-- ============ COMPAT ============ -->
   <section class="section section--tight" id="compat">
-    <div class="wrap compat">
-      <div class="compat__col">
-        <h2 class="h3">兼容的模型服务</h2>
-        <p class="compat__d">任何兼容 OpenAI <code>chat/completions</code> 的服务都能接入，包括自建网关。</p>
-        <ul class="chips">
-          <li>DeepSeek</li><li>OpenAI</li><li>通义千问</li><li>Moonshot</li><li>自建网关</li>
-        </ul>
-      </div>
-      <div class="compat__col">
-        <h2 class="h3">运行环境</h2>
-        <p class="compat__d">基于 Manifest V3，Chromium 内核 110 及以上版本均可加载。</p>
-        <ul class="chips">
-          <li>Microsoft Edge</li><li>Google Chrome</li><li>Chromium 内核</li>
-        </ul>
+    <div class="wrap">
+      <header class="sec-head sec-head--center">
+        <p class="eyebrow"><svg class="icon eyebrow__icon" aria-hidden="true"><use href="#i-sparkle" /></svg>兼容性</p>
+        <h2 class="h2">接你自己的模型服务</h2>
+        <p class="sec-head__en mono">Compatibility</p>
+      </header>
+      <div class="compat">
+        <div class="compat__col">
+          <span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-globe" /></svg></span>
+          <h3 class="h3">兼容的模型服务</h3>
+          <p class="compat__d">任何兼容 OpenAI <code>chat/completions</code> 的服务都能接入，包括自建网关。</p>
+          <ul class="chips">
+            <li>DeepSeek</li><li>OpenAI</li><li>通义千问</li><li>Moonshot</li><li>自建网关</li>
+          </ul>
+        </div>
+        <div class="compat__col">
+          <span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-lines" /></svg></span>
+          <h3 class="h3">运行环境</h3>
+          <p class="compat__d">基于 Manifest V3，Chromium 内核 110 及以上版本均可加载。</p>
+          <ul class="chips">
+            <li>Microsoft Edge</li><li>Google Chrome</li><li>Chromium 内核</li>
+          </ul>
+        </div>
       </div>
     </div>
   </section>
