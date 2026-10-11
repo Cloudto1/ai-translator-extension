@@ -137,6 +137,14 @@
     * { box-sizing: border-box; }
     /* Shadow DOM 环境下 [hidden] 会被下方的 display 规则覆盖，必须显式声明 */
     [hidden] { display: none !important; }
+    /* 图标：与扩展页同规范 —— 内联 SVG 符号表，stroke 随 currentColor */
+    .ait-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .ait-icon {
+      display: block; flex: none;
+      width: 14px; height: 14px;
+      fill: none; stroke: currentColor;
+      stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round;
+    }
     .ait-root {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
         "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
@@ -147,6 +155,7 @@
       --ait-primary-weak: rgba(14, 116, 144, 0.12);
       --ait-primary-line: rgba(14, 116, 144, 0.45);
       --ait-on-primary: #ffffff;
+      --ait-primary-hover: #0b5f78;
       --ait-border: #e2e8f0;
       --ait-surface: #ffffff;
       --ait-muted: #475569;
@@ -160,6 +169,7 @@
         --ait-primary-weak: rgba(34, 184, 207, 0.16);
         --ait-primary-line: rgba(34, 184, 207, 0.45);
         --ait-on-primary: #06232a;
+        --ait-primary-hover: #3dcadd;
         --ait-border: rgba(148, 163, 184, 0.24);
         --ait-surface: #1b1e27;
         --ait-muted: #9aa3b2;
@@ -221,10 +231,13 @@
     .ait-selbtn {
       display: flex; align-items: center; gap: 6px;
       padding: 7px 12px; border-radius: 999px;
+      border: none;
       font-weight: 600; color: var(--ait-on-primary); background: var(--ait-primary);
       box-shadow: var(--ait-shadow); white-space: nowrap;
     }
-    .ait-selbtn:hover { filter: brightness(1.07); }
+    /* 实心填充上换实色，不用 filter: brightness()——深色下底色是亮青，brightness 会算错 */
+    .ait-selbtn:hover { background: var(--ait-primary-hover); }
+    .ait-selbtn:focus-visible { outline: 2px solid var(--ait-primary); outline-offset: 2px; }
 
     .ait-card { width: 380px; max-width: min(88vw, 380px); overflow: hidden; }
     .ait-head {
@@ -279,6 +292,17 @@
     const root = document.createElement('div');
     root.className = 'ait-root';
     root.innerHTML = `
+      <svg class="ait-sprite" aria-hidden="true" focusable="false">
+        <symbol id="ait-i-selection" viewBox="0 0 24 24">
+          <path d="M7 4H5.5A1.5 1.5 0 0 0 4 5.5V7" />
+          <path d="M17 4h1.5A1.5 1.5 0 0 1 20 5.5V7" />
+          <path d="M7 20H5.5A1.5 1.5 0 0 1 4 18.5V17" />
+          <path d="M17 20h1.5a1.5 1.5 0 0 0 1.5-1.5V17" />
+          <path d="M12 8v8" />
+          <path d="M9.5 8h5" />
+          <path d="M9.5 16h5" />
+        </symbol>
+      </svg>
       <div class="ait-toast-wrap"></div>
       <div class="ait-float ait-progress" hidden>
         <span class="ait-spin"></span>
@@ -286,7 +310,7 @@
         <span class="ait-bar"><i></i></span>
         <button class="ait-textbtn" data-act="cancel">取消</button>
       </div>
-      <div class="ait-float ait-selbtn" hidden></div>
+      <button class="ait-float ait-selbtn" type="button" hidden></button>
       <div class="ait-float ait-card" hidden></div>
       <div class="ait-float ait-panel" hidden></div>
     `;
@@ -548,7 +572,9 @@
   function showSelectionButton(rect, text) {
     const el = createUI();
     const btn = el.selbtn;
-    btn.textContent = '译 划词翻译';
+    btn.innerHTML =
+      '<svg class="ait-icon" aria-hidden="true"><use href="#ait-i-selection" /></svg><span>划词翻译</span>';
+    btn.setAttribute('aria-label', '划词翻译选中文本');
     btn.hidden = false;
     const width = btn.offsetWidth || 110;
     const top = rect.bottom + 8 + 34 > window.innerHeight ? Math.max(8, rect.top - 42) : rect.bottom + 8;
