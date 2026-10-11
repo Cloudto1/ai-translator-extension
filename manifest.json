@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "AI 翻译助手",
+  "version": "1.0.0",
+  "description": "全页面翻译、划词翻译、网页总结。兼容 OpenAI 协议，API Key 与 Base URL 由用户自行配置。",
+  "minimum_chrome_version": "110",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "AI 翻译助手",
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "commands": {
+    "translate-page": {
+      "suggested_key": { "default": "Alt+Shift+T" },
+      "description": "翻译整个页面"
+    },
+    "summarize-page": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "总结当前网页"
+    },
+    "translate-selection": {
+      "suggested_key": { "default": "Alt+Shift+E" },
+      "description": "翻译选中文本"
+    }
+  }
+}

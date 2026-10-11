@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI 翻译助手</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="head">
+        <span class="logo">译</span>
+        <div class="brand">
+          <h1>AI 翻译助手</h1>
+          <p id="status" class="status"><span class="dot"></span><span id="statusText">正在读取配置…</span></p>
+        </div>
+      </header>
+
+      <nav class="tabs" id="tabs">
+        <button class="tab is-active" data-tab="actions" type="button">快捷操作</button>
+        <button class="tab" data-tab="settings" type="button">设置</button>
+      </nav>
+
+      <main class="main">
+        <!-- 快捷操作 -->
+        <section class="panel is-active" data-panel="actions">
+          <button class="action" data-action="translate-page" type="button">
+            <span class="action-icon">文</span>
+            <span class="action-text">
+              <strong>翻译整个页面</strong>
+              <small>再次点击可恢复原文</small>
+            </span>
+          </button>
+          <button class="action" data-action="summarize-page" type="button">
+            <span class="action-icon">摘</span>
+            <span class="action-text">
+              <strong>总结当前网页</strong>
+              <small>提炼要点与结论</small>
+            </span>
+          </button>
+          <button class="action" data-action="translate-selection" type="button">
+            <span class="action-icon">词</span>
+            <span class="action-text">
+              <strong>翻译选中文本</strong>
+              <small>先在页面上选中文字再点击</small>
+            </span>
+          </button>
+
+          <div class="card">
+            <label class="field">
+              <span class="field-label">目标语言</span>
+              <select id="targetLang"></select>
+            </label>
+            <p class="hint">自动 = 中 ⇄ 英 互译：中文内容译成英文，其它语言译成中文。</p>
+            <label class="switch">
+              <input type="checkbox" id="autoTranslateSelection" />
+              <span class="track"></span>
+              <span>划词后自动翻译（无需点击按钮）</span>
+            </label>
+          </div>
+
+          <p class="tip">快捷键：<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> 翻译整页 · <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> 总结 · <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> 划词翻译</p>
+        </section>
+
+        <!-- 设置 -->
+        <section class="panel" data-panel="settings">
+          <div class="card">
+            <label class="field">
+              <span class="field-label">API Key</span>
+              <span class="input-row">
+                <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-..." />
+                <button class="ghost" id="toggleKey" type="button">显示</button>
+              </span>
+            </label>
+            <label class="field">
+              <span class="field-label">Base URL</span>
+              <input id="baseUrl" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.deepseek.com" />
+            </label>
+            <label class="field">
+              <span class="field-label">模型</span>
+              <input id="model" type="text" autocomplete="off" spellcheck="false" placeholder="deepseek-flash" />
+            </label>
+            <p class="hint">兼容 OpenAI 协议：可填写任意 OpenAI 兼容服务的 Key、Base URL 与模型名（如 gpt-4o-mini、deepseek-chat）。</p>
+            <div class="row">
+              <button class="primary" id="testBtn" type="button">测试连接</button>
+              <button class="ghost" id="resetBtn" type="button">恢复默认</button>
+            </div>
+            <p class="result" id="testResult"></p>
+          </div>
+
+          <div class="card">
+            <label class="field">
+              <span class="field-label">页面翻译方式</span>
+              <select id="pageMode">
+                <option value="replace">替换原文</option>
+                <option value="bilingual">双语对照（原文 + 译文）</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">总结详细程度</span>
+              <select id="summaryLength">
+                <option value="short">简短</option>
+                <option value="medium">标准</option>
+                <option value="detailed">详细</option>
+              </select>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="disableThinking" />
+              <span class="track"></span>
+              <span>关闭模型思考过程（更快、更省）</span>
+            </label>
+          </div>
+
+          <p class="saved" id="savedHint">设置会自动保存</p>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
