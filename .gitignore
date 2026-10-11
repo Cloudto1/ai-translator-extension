@@ -8,3 +8,6 @@ build/
 Thumbs.db
 tests/.artifacts/
 *.log
+
+# 设计系统产物（本地生成，不入库）
+design-system/

@@ -7,6 +7,36 @@
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
+    <!-- 图标精灵：统一 24x24 / 1.75 描边，颜色随 currentColor 走 -->
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-globe" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18" />
+        <path d="M12 3c2.6 2.7 2.6 15.3 0 18" />
+        <path d="M12 3c-2.6 2.7-2.6 15.3 0 18" />
+      </symbol>
+      <symbol id="i-lines" viewBox="0 0 24 24">
+        <path d="M4 6h16" />
+        <path d="M4 12h11" />
+        <path d="M4 18h14" />
+      </symbol>
+      <symbol id="i-selection" viewBox="0 0 24 24">
+        <path d="M7 4H5.5A1.5 1.5 0 0 0 4 5.5V7" />
+        <path d="M17 4h1.5A1.5 1.5 0 0 1 20 5.5V7" />
+        <path d="M7 20H5.5A1.5 1.5 0 0 1 4 18.5V17" />
+        <path d="M17 20h1.5a1.5 1.5 0 0 0 1.5-1.5V17" />
+        <path d="M12 8v8" />
+        <path d="M9.5 8h5" />
+        <path d="M9.5 16h5" />
+      </symbol>
+      <symbol id="i-swap" viewBox="0 0 24 24">
+        <path d="M4 8h13" />
+        <path d="M14 5l3 3-3 3" />
+        <path d="M20 16H7" />
+        <path d="M10 13l-3 3 3 3" />
+      </symbol>
+    </svg>
+
     <div class="app">
       <header class="head">
         <span class="logo">译</span>
@@ -16,30 +46,58 @@
         </div>
       </header>
 
-      <nav class="tabs" id="tabs">
-        <button class="tab is-active" data-tab="actions" type="button">快捷操作</button>
-        <button class="tab" data-tab="settings" type="button">设置</button>
-      </nav>
+      <div class="tabs" id="tabs" role="tablist" aria-label="功能分区">
+        <button
+          class="tab is-active"
+          id="tab-actions"
+          data-tab="actions"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="panel-actions"
+          tabindex="0"
+        >
+          快捷操作
+        </button>
+        <button
+          class="tab"
+          id="tab-settings"
+          data-tab="settings"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-settings"
+          tabindex="-1"
+        >
+          设置
+        </button>
+      </div>
 
       <main class="main">
         <!-- 快捷操作 -->
-        <section class="panel is-active" data-panel="actions">
+        <section
+          class="panel is-active"
+          id="panel-actions"
+          data-panel="actions"
+          role="tabpanel"
+          aria-labelledby="tab-actions"
+        >
           <button class="action" data-action="translate-page" type="button">
-            <span class="action-icon">文</span>
+            <span class="action-icon" aria-hidden="true"><svg class="icon"><use href="#i-globe" /></svg></span>
             <span class="action-text">
               <strong>翻译整个页面</strong>
               <small>再次点击可恢复原文</small>
             </span>
           </button>
           <button class="action" data-action="summarize-page" type="button">
-            <span class="action-icon">摘</span>
+            <span class="action-icon" aria-hidden="true"><svg class="icon"><use href="#i-lines" /></svg></span>
             <span class="action-text">
               <strong>总结当前网页</strong>
               <small>提炼要点与结论</small>
             </span>
           </button>
           <button class="action" data-action="translate-selection" type="button">
-            <span class="action-icon">词</span>
+            <span class="action-icon" aria-hidden="true"><svg class="icon"><use href="#i-selection" /></svg></span>
             <span class="action-text">
               <strong>翻译选中文本</strong>
               <small>先在页面上选中文字再点击</small>
@@ -52,7 +110,15 @@
                 <span class="field-label">源语言</span>
                 <select id="sourceLang"></select>
               </label>
-              <button class="ghost icon-btn" id="swapLang" type="button" title="交换源语言与目标语言">⇄</button>
+              <button
+                class="ghost icon-btn"
+                id="swapLang"
+                type="button"
+                title="交换源语言与目标语言"
+                aria-label="交换源语言与目标语言"
+              >
+                <svg class="icon" aria-hidden="true"><use href="#i-swap" /></svg>
+              </button>
               <label class="field">
                 <span class="field-label">目标语言</span>
                 <select id="targetLang"></select>
@@ -70,7 +136,13 @@
         </section>
 
         <!-- 设置 -->
-        <section class="panel" data-panel="settings">
+        <section
+          class="panel"
+          id="panel-settings"
+          data-panel="settings"
+          role="tabpanel"
+          aria-labelledby="tab-settings"
+        >
           <div class="card">
             <label class="field">
               <span class="field-label">API Key</span>

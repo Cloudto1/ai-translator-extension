@@ -7,6 +7,42 @@
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
+    <!-- 图标精灵：统一 24x24 / 1.75 描边，颜色随 currentColor 走 -->
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-chart" viewBox="0 0 24 24">
+        <path d="M4 20h16" />
+        <path d="M7 20v-6" />
+        <path d="M12 20V8" />
+        <path d="M17 20v-9" />
+      </symbol>
+      <symbol id="i-list" viewBox="0 0 24 24">
+        <path d="M9 6h11" />
+        <path d="M9 12h11" />
+        <path d="M9 18h11" />
+        <circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none" />
+        <circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+        <circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18" />
+        <path d="M12 3c2.6 2.7 2.6 15.3 0 18" />
+        <path d="M12 3c-2.6 2.7-2.6 15.3 0 18" />
+      </symbol>
+      <symbol id="i-key" viewBox="0 0 24 24">
+        <circle cx="8" cy="12" r="3.5" />
+        <path d="M11.5 12H20" />
+        <path d="M17 12v3" />
+        <path d="M20 12v2.5" />
+      </symbol>
+      <symbol id="i-swap" viewBox="0 0 24 24">
+        <path d="M4 8h13" />
+        <path d="M14 5l3 3-3 3" />
+        <path d="M20 16H7" />
+        <path d="M10 13l-3 3 3 3" />
+      </symbol>
+    </svg>
+
     <div class="layout">
       <aside class="sidebar">
         <div class="brand">
@@ -17,18 +53,28 @@
           </div>
         </div>
 
-        <nav class="nav">
-          <button class="nav-item is-active" data-view="dashboard" type="button">
-            <span class="nav-icon">▤</span><span>概览与统计</span>
+        <nav class="nav" aria-label="管理面板分区">
+          <button
+            class="nav-item is-active"
+            data-view="dashboard"
+            type="button"
+            aria-controls="view-dashboard"
+            aria-current="page"
+          >
+            <span class="nav-icon" aria-hidden="true"><svg class="icon"><use href="#i-chart" /></svg></span>
+            <span>概览与统计</span>
           </button>
-          <button class="nav-item" data-view="history" type="button">
-            <span class="nav-icon">☰</span><span>翻译记录</span><span class="nav-badge" id="historyBadge">0</span>
+          <button class="nav-item" data-view="history" type="button" aria-controls="view-history">
+            <span class="nav-icon" aria-hidden="true"><svg class="icon"><use href="#i-list" /></svg></span>
+            <span>翻译记录</span><span class="nav-badge" id="historyBadge">0</span>
           </button>
-          <button class="nav-item" data-view="language" type="button">
-            <span class="nav-icon">文</span><span>语言设置</span>
+          <button class="nav-item" data-view="language" type="button" aria-controls="view-language">
+            <span class="nav-icon" aria-hidden="true"><svg class="icon"><use href="#i-globe" /></svg></span>
+            <span>语言设置</span>
           </button>
-          <button class="nav-item" data-view="api" type="button">
-            <span class="nav-icon">⚙</span><span>API 设置</span>
+          <button class="nav-item" data-view="api" type="button" aria-controls="view-api">
+            <span class="nav-icon" aria-hidden="true"><svg class="icon"><use href="#i-key" /></svg></span>
+            <span>API 设置</span>
           </button>
         </nav>
 
@@ -40,7 +86,7 @@
 
       <main class="content">
         <!-- 概览 -->
-        <section class="view is-active" data-view="dashboard">
+        <section class="view is-active" id="view-dashboard" data-view="dashboard">
           <header class="view-head">
             <div>
               <h2>概览与统计</h2>
@@ -78,7 +124,7 @@
         </section>
 
         <!-- 翻译记录 -->
-        <section class="view" data-view="history">
+        <section class="view" id="view-history" data-view="history">
           <header class="view-head">
             <div>
               <h2>翻译记录</h2>
@@ -99,7 +145,7 @@
         </section>
 
         <!-- 语言设置 -->
-        <section class="view" data-view="language">
+        <section class="view" id="view-language" data-view="language">
           <header class="view-head">
             <div>
               <h2>语言设置</h2>
@@ -113,7 +159,15 @@
                 <span class="field-label">源语言</span>
                 <select id="sourceLang" class="input"></select>
               </label>
-              <button class="btn btn-icon" id="swapLang" type="button" title="交换源语言与目标语言">⇄</button>
+              <button
+                class="btn btn-icon"
+                id="swapLang"
+                type="button"
+                title="交换源语言与目标语言"
+                aria-label="交换源语言与目标语言"
+              >
+                <svg class="icon" aria-hidden="true"><use href="#i-swap" /></svg>
+              </button>
               <label class="field">
                 <span class="field-label">目标语言</span>
                 <select id="targetLang" class="input"></select>
@@ -166,7 +220,7 @@
         </section>
 
         <!-- API 设置 -->
-        <section class="view" data-view="api">
+        <section class="view" id="view-api" data-view="api">
           <header class="view-head">
             <div>
               <h2>API 设置</h2>

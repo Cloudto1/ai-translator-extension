@@ -1,14 +1,40 @@
 :root {
-  --primary: #3b6ef5;
-  --primary-weak: rgba(59, 110, 245, 0.12);
-  --bg: #f6f7fb;
+  /* 品牌色：青蓝系（由数据集 Secondary #0891B2 收敛，白字对比 5.36:1） */
+  --primary: #0e7490;
+  --primary-hover: #0b5f78;
+  --primary-soft: #0891b2;
+  --primary-weak: rgba(14, 116, 144, 0.12);
+  --primary-glow: rgba(14, 116, 144, 0.35);
+  --on-primary: #ffffff;
+
+  /* 中性色（数据集 palette 原值） */
+  --bg: #f8fafc;
   --surface: #ffffff;
-  --text: #1f2233;
-  --muted: #6b7280;
-  --border: rgba(15, 23, 42, 0.1);
+  --text: #0f172a;
+  --muted: #475569;
+  --border: #e2e8f0;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
   --ok: #16a34a;
   --err: #dc2626;
+
+  /* 间距刻度 — Density 9（弹窗紧凑） */
+  --space-xs: 2px;
+  --space-sm: 4px;
+  --space-md: 8px;
+  --space-lg: 12px;
+  --space-xl: 16px;
+  --space-2xl: 24px;
+
+  /* 字号阶梯 */
+  --font-title: 15px;
+  --font-body: 13px;
+  --font-label: 12px;
+  --font-hint: 11.5px;
+
+  /* 圆角 */
+  --radius-sm: 9px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,12 +45,41 @@
     --muted: #9aa3b2;
     --border: rgba(148, 163, 184, 0.22);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.4);
-    --primary-weak: rgba(96, 140, 255, 0.18);
+
+    /* 深色下改用亮青：作文字/图标对底色 7.0:1；作填充则配深色文字 6.7:1 */
+    --primary: #22b8cf;
+    --primary-hover: #3dcadd;
+    --primary-soft: #67e8f9;
+    --primary-weak: rgba(34, 184, 207, 0.16);
+    --primary-glow: rgba(34, 184, 207, 0.28);
+    --on-primary: #06232a;
+
+    --ok: #4ade80;
+    --err: #fca5a5;
   }
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* 图标：全程使用内联 SVG（stroke 随 currentColor），不用字体符号或 emoji */
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 html,
@@ -36,7 +91,7 @@ body {
 body {
   width: 360px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
-  font-size: 13px;
+  font-size: var(--font-body);
   color: var(--text);
   background: var(--bg);
 }
@@ -50,8 +105,8 @@ body {
 .head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 16px 10px;
+  gap: var(--space-md);
+  padding: var(--space-lg) var(--space-xl) var(--space-md);
 }
 
 .logo {
@@ -59,29 +114,29 @@ body {
   height: 34px;
   flex: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, #4f7cff, #2d5be0);
-  color: #fff;
+  background: linear-gradient(135deg, var(--primary-soft), var(--primary));
+  color: var(--on-primary);
   font-size: 16px;
   font-weight: 700;
   display: grid;
   place-items: center;
-  box-shadow: 0 4px 12px rgba(59, 110, 245, 0.35);
+  box-shadow: 0 4px 12px var(--primary-glow);
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--font-title);
   font-weight: 650;
   letter-spacing: 0.2px;
 }
 
 .status {
-  margin: 2px 0 0;
-  font-size: 11.5px;
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-hint);
   color: var(--muted);
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-sm);
 }
 
 .dot {
@@ -102,8 +157,8 @@ body {
 
 .tabs {
   display: flex;
-  gap: 4px;
-  padding: 0 12px;
+  gap: var(--space-sm);
+  padding: 0 var(--space-lg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -113,7 +168,7 @@ body {
   background: none;
   font: inherit;
   color: var(--muted);
-  padding: 8px 10px 9px;
+  padding: var(--space-md) 10px 9px;
   border-radius: 8px 8px 0 0;
   cursor: pointer;
   position: relative;
@@ -136,14 +191,14 @@ body {
 }
 
 .main {
-  padding: 12px;
+  padding: var(--space-lg);
   overflow-y: auto;
 }
 
 .panel {
   display: none;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-md);
 }
 
 .panel.is-active {
@@ -153,13 +208,13 @@ body {
 .action {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   width: 100%;
   text-align: left;
-  padding: 11px 12px;
+  padding: 10px var(--space-lg);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   box-shadow: var(--shadow);
   transition: transform 0.12s ease, border-color 0.12s ease;
@@ -169,7 +224,7 @@ body {
 
 .action:hover {
   transform: translateY(-1px);
-  border-color: rgba(59, 110, 245, 0.45);
+  border-color: var(--primary);
 }
 
 .action:active {
@@ -180,12 +235,11 @@ body {
   width: 30px;
   height: 30px;
   flex: none;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--primary-weak);
   color: var(--primary);
   display: grid;
   place-items: center;
-  font-weight: 700;
 }
 
 .action-text {
@@ -197,33 +251,33 @@ body {
 
 .action-text strong {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 
 .action-text small {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: var(--font-hint);
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-md);
   box-shadow: var(--shadow);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--space-sm);
 }
 
 .field-label {
-  font-size: 12px;
+  font-size: var(--font-label);
   color: var(--muted);
   font-weight: 500;
 }
@@ -232,8 +286,8 @@ input[type='text'],
 input[type='password'],
 select {
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 9px;
+  padding: var(--space-md) 10px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
@@ -262,20 +316,20 @@ button.primary,
 button.ghost {
   font: inherit;
   cursor: pointer;
-  border-radius: 9px;
-  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  padding: var(--space-md) var(--space-lg);
   border: 1px solid transparent;
-  transition: filter 0.12s ease;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
 }
 
 button.primary {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   font-weight: 600;
 }
 
 button.primary:hover {
-  filter: brightness(1.06);
+  background: var(--primary-hover);
 }
 
 button.primary:disabled {
@@ -291,7 +345,7 @@ button.ghost {
 
 button.ghost:hover {
   color: var(--primary);
-  border-color: rgba(59, 110, 245, 0.4);
+  border-color: var(--primary);
 }
 
 .row {
@@ -306,7 +360,7 @@ button.ghost:hover {
 .hint,
 .tip {
   margin: 0;
-  font-size: 11.5px;
+  font-size: var(--font-hint);
   color: var(--muted);
   line-height: 1.55;
 }
@@ -376,7 +430,7 @@ kbd {
 
 .result {
   margin: 0;
-  font-size: 11.5px;
+  font-size: var(--font-hint);
   min-height: 0;
   color: var(--muted);
   word-break: break-word;
@@ -417,7 +471,7 @@ kbd {
 
 .foot {
   border-top: 1px solid var(--border);
-  padding: 8px 12px 10px;
+  padding: var(--space-md) var(--space-lg) 10px;
   margin-top: auto;
 }
 

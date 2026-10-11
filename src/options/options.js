@@ -100,7 +100,10 @@ function switchView(name) {
   activeView = name;
   for (const view of els.views) view.classList.toggle('is-active', view.dataset.view === name);
   for (const item of els.nav.querySelectorAll('.nav-item')) {
-    item.classList.toggle('is-active', item.dataset.view === name);
+    const active = item.dataset.view === name;
+    item.classList.toggle('is-active', active);
+    if (active) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
   }
   if (location.hash.slice(1) !== name) window.history.replaceState(null, '', `#${name}`);
   if (name === 'dashboard') renderDashboard();

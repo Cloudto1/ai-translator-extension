@@ -1,33 +1,83 @@
 :root {
-  --primary: #3b6ef5;
-  --primary-weak: rgba(59, 110, 245, 0.12);
-  --bg: #f5f6fa;
+  /* 品牌色：与 popup 同一套令牌（青蓝系，白字对比 5.36:1） */
+  --primary: #0e7490;
+  --primary-hover: #0b5f78;
+  --primary-soft: #0891b2;
+  --primary-weak: rgba(14, 116, 144, 0.12);
+  --primary-glow: rgba(14, 116, 144, 0.32);
+  --on-primary: #ffffff;
+
+  --bg: #f8fafc;
   --surface: #ffffff;
-  --text: #1c1f2e;
-  --muted: #6b7280;
-  --border: rgba(15, 23, 42, 0.1);
+  --text: #0f172a;
+  --muted: #475569;
+  --border: #e2e8f0;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 30px rgba(15, 23, 42, 0.06);
   --ok: #16a34a;
   --err: #dc2626;
   --warn: #d97706;
   --sidebar: #ffffff;
+
+  /* 间距刻度 — Density 7（管理面板留白更宽） */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 18px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+
+  /* 圆角 */
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #101219;
-    --surface: #191c25;
-    --text: #e6e8ee;
-    --muted: #98a1b3;
-    --border: rgba(148, 163, 184, 0.2);
+    --bg: #14161d;
+    --surface: #1b1e27;
+    --text: #e5e7eb;
+    --muted: #9aa3b2;
+    --border: rgba(148, 163, 184, 0.22);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35);
-    --primary-weak: rgba(96, 140, 255, 0.18);
+
+    /* 深色下改用亮青：作文字/图标对底色 7.0:1；作填充则配深色文字 6.7:1 */
+    --primary: #22b8cf;
+    --primary-hover: #3dcadd;
+    --primary-soft: #67e8f9;
+    --primary-weak: rgba(34, 184, 207, 0.16);
+    --primary-glow: rgba(34, 184, 207, 0.26);
+    --on-primary: #06232a;
+
+    --ok: #4ade80;
+    --err: #fca5a5;
+    --warn: #fbbf24;
     --sidebar: #14161d;
   }
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* 图标：全程使用内联 SVG（stroke 随 currentColor），不用字体符号或 emoji */
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 html,
@@ -56,7 +106,7 @@ body {
 .sidebar {
   background: var(--sidebar);
   border-right: 1px solid var(--border);
-  padding: 22px 16px;
+  padding: var(--space-xl) var(--space-lg);
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -68,7 +118,7 @@ body {
 .brand {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: var(--space-md);
   padding: 0 6px;
 }
 
@@ -77,13 +127,13 @@ body {
   height: 38px;
   flex: none;
   border-radius: 11px;
-  background: linear-gradient(135deg, #5585ff, #2854d8);
-  color: #fff;
+  background: linear-gradient(135deg, var(--primary-soft), var(--primary));
+  color: var(--on-primary);
   font-weight: 700;
   font-size: 17px;
   display: grid;
   place-items: center;
-  box-shadow: 0 6px 16px rgba(59, 110, 245, 0.32);
+  box-shadow: 0 6px 16px var(--primary-glow);
 }
 
 .brand h1 {
@@ -111,10 +161,10 @@ body {
   gap: 10px;
   width: 100%;
   text-align: left;
-  padding: 9px 11px;
+  padding: 10px var(--space-md);
   border: none;
   background: none;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   font: inherit;
   font-weight: 500;
@@ -135,8 +185,10 @@ body {
 
 .nav-icon {
   width: 18px;
-  text-align: center;
-  font-size: 13px;
+  height: 18px;
+  flex: none;
+  display: grid;
+  place-items: center;
   opacity: 0.85;
 }
 
@@ -147,7 +199,7 @@ body {
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   min-width: 20px;
   text-align: center;
 }
@@ -207,7 +259,7 @@ body {
 /* ---------------- 主内容 ---------------- */
 
 .content {
-  padding: 28px 32px 48px;
+  padding: var(--space-xl) var(--space-2xl) var(--space-3xl);
   max-width: 1120px;
   width: 100%;
 }
@@ -246,12 +298,12 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 18px;
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-md);
 }
 
 .card h3 {
@@ -340,20 +392,21 @@ select.input:focus {
 }
 
 .btn:hover {
-  border-color: rgba(59, 110, 245, 0.45);
+  border-color: var(--primary);
   color: var(--primary);
 }
 
 .btn-primary {
   background: var(--primary);
   border-color: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   font-weight: 600;
 }
 
 .btn-primary:hover {
-  filter: brightness(1.07);
-  color: #fff;
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: var(--on-primary);
 }
 
 .btn-danger:hover {
@@ -514,7 +567,7 @@ kbd {
 }
 
 .chip:hover {
-  border-color: rgba(59, 110, 245, 0.45);
+  border-color: var(--primary);
   color: var(--primary);
 }
 
@@ -523,18 +576,18 @@ kbd {
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 14px;
+  gap: var(--space-lg);
 }
 
 .stat {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-xs);
 }
 
 .stat-label {
@@ -590,7 +643,7 @@ kbd {
   width: 100%;
   max-width: 34px;
   border-radius: 6px 6px 3px 3px;
-  background: linear-gradient(180deg, #6b93ff, #3b6ef5);
+  background: linear-gradient(180deg, var(--primary-soft), var(--primary));
   min-height: 3px;
   transition: height 0.3s ease;
 }

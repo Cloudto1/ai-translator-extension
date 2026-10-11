@@ -103,13 +103,36 @@ async function persist(patch, { immediate = true } = {}) {
   else saveTimer = window.setTimeout(run, 400);
 }
 
-function switchTab(name) {
-  for (const tab of els.tabs.querySelectorAll('.tab')) {
-    tab.classList.toggle('is-active', tab.dataset.tab === name);
+const tabEls = () => [...els.tabs.querySelectorAll('.tab')];
+
+function switchTab(name, { focus = false } = {}) {
+  for (const tab of tabEls()) {
+    const active = tab.dataset.tab === name;
+    tab.classList.toggle('is-active', active);
+    tab.setAttribute('aria-selected', String(active));
+    // roving tabindex：只有当前页签可被 Tab 键聚焦，其余用方向键切换
+    tab.tabIndex = active ? 0 : -1;
+    if (active && focus) tab.focus();
   }
   for (const panel of document.querySelectorAll('.panel')) {
     panel.classList.toggle('is-active', panel.dataset.panel === name);
   }
+}
+
+function onTabKeydown(event) {
+  const step = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+  const tabs = tabEls();
+  const index = tabs.findIndex((tab) => tab.classList.contains('is-active'));
+  if (index < 0) return;
+
+  let next = null;
+  if (step) next = (index + step + tabs.length) % tabs.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = tabs.length - 1;
+  if (next === null) return;
+
+  event.preventDefault();
+  switchTab(tabs[next].dataset.tab, { focus: true });
 }
 
 async function runOnActiveTab(command, text) {
@@ -175,6 +198,7 @@ function bindEvents() {
     const tab = event.target.closest('.tab');
     if (tab) switchTab(tab.dataset.tab);
   });
+  els.tabs.addEventListener('keydown', onTabKeydown);
 
   for (const action of document.querySelectorAll('.action')) {
     action.addEventListener('click', () => {

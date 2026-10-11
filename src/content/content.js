@@ -142,20 +142,28 @@
         "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
       font-size: 13px;
       line-height: 1.6;
-      color: #1f2233;
-      --ait-primary: #3b6ef5;
-      --ait-primary-weak: rgba(59, 110, 245, 0.12);
-      --ait-border: rgba(15, 23, 42, 0.12);
+      color: #0f172a;
+      --ait-primary: #0e7490;
+      --ait-primary-weak: rgba(14, 116, 144, 0.12);
+      --ait-primary-line: rgba(14, 116, 144, 0.45);
+      --ait-on-primary: #ffffff;
+      --ait-border: #e2e8f0;
       --ait-surface: #ffffff;
-      --ait-muted: #6b7280;
+      --ait-muted: #475569;
+      --ait-err: #dc2626;
       --ait-shadow: 0 12px 32px rgba(15, 23, 42, 0.16), 0 2px 8px rgba(15, 23, 42, 0.08);
     }
     @media (prefers-color-scheme: dark) {
       .ait-root {
         color: #e5e7eb;
+        --ait-primary: #22b8cf;
+        --ait-primary-weak: rgba(34, 184, 207, 0.16);
+        --ait-primary-line: rgba(34, 184, 207, 0.45);
+        --ait-on-primary: #06232a;
         --ait-border: rgba(148, 163, 184, 0.24);
         --ait-surface: #1b1e27;
         --ait-muted: #9aa3b2;
+        --ait-err: #fca5a5;
         --ait-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.35);
       }
     }
@@ -191,8 +199,7 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
-    .ait-toast.err { border-color: #f87171; color: #b91c1c; }
-    @media (prefers-color-scheme: dark) { .ait-toast.err { color: #fca5a5; } }
+    .ait-toast.err { border-color: #f87171; color: var(--ait-err); }
 
     .ait-progress {
       display: flex;
@@ -214,7 +221,7 @@
     .ait-selbtn {
       display: flex; align-items: center; gap: 6px;
       padding: 7px 12px; border-radius: 999px;
-      font-weight: 600; color: #fff; background: var(--ait-primary);
+      font-weight: 600; color: var(--ait-on-primary); background: var(--ait-primary);
       box-shadow: var(--ait-shadow); white-space: nowrap;
     }
     .ait-selbtn:hover { filter: brightness(1.07); }
@@ -252,12 +259,11 @@
     .ait-li .ait-num { font-weight: 600; min-width: 14px; }
     .ait-gap { height: 6px; }
     code { background: var(--ait-primary-weak); padding: 1px 4px; border-radius: 4px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
-    .ait-error { color: #dc2626; }
-    @media (prefers-color-scheme: dark) { .ait-error { color: #fca5a5; } }
+    .ait-error { color: var(--ait-err); }
     strong { font-weight: 700; }
     .ait-spin { width: 12px; height: 12px; border: 2px solid var(--ait-primary-weak); border-top-color: var(--ait-primary); border-radius: 50%; display: inline-block; animation: ait-spin .8s linear infinite; }
     @keyframes ait-spin { to { transform: rotate(360deg); } }
-    .ait-trans-node { border-bottom: 1px dotted rgba(59, 110, 245, .45); }
+    .ait-trans-node { border-bottom: 1px dotted var(--ait-primary-line); }
   `;
 
   let ui = null;
