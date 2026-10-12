@@ -17,8 +17,9 @@ const EXT_PATH = path.resolve(__dirname, '..');
 const ARTIFACTS = path.join(__dirname, '.artifacts');
 fs.mkdirSync(ARTIFACTS, { recursive: true });
 
+// 密钥只从环境变量读取，绝不硬编码（.env 已被 .gitignore 排除）
 const API = {
-  apiKey: process.env.AIT_API_KEY || 'sk-f2f79ea7182f4773a8ca58e767025f6c',
+  apiKey: process.env.AIT_API_KEY || '',
   baseUrl: process.env.AIT_BASE_URL || 'https://api.deepseek.com',
   model: process.env.AIT_MODEL || 'deepseek-flash',
 };

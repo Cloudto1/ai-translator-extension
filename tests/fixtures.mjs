@@ -1,7 +1,9 @@
 /** 测试用的 API 配置与样例文本。 */
 
+// 密钥只从环境变量读取，绝不硬编码（.env 已在 .gitignore 中）。
+// 未配置时 apiKey 为空，集成测试会自动 skip，而不是静默使用某个固定密钥。
 export const API_CONFIG = {
-  apiKey: process.env.AIT_API_KEY || 'sk-f2f79ea7182f4773a8ca58e767025f6c',
+  apiKey: process.env.AIT_API_KEY || '',
   baseUrl: process.env.AIT_BASE_URL || 'https://api.deepseek.com',
   model: process.env.AIT_MODEL || 'deepseek-flash',
   targetLang: 'auto',
