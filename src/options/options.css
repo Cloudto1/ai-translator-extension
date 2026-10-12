@@ -293,6 +293,8 @@ body {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  /* 不压缩：放不下时整块换到下一行，而不是把按钮挤成两行 */
+  flex-shrink: 0;
 }
 
 .card {
@@ -340,7 +342,10 @@ select.input {
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
-.input-sm {
+/* 必须带上 select. 前缀：select.input 的优先级更高，否则下拉框会被撑成 100% 宽，
+   把同一行的按钮挤到下一行 */
+.input-sm,
+select.input-sm {
   width: auto;
   min-width: 130px;
   padding: 7px 10px;

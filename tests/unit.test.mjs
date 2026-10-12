@@ -22,6 +22,13 @@ import {
   pruneHistory,
   sumEntries,
   computeStats,
+  createStats,
+  normalizeStats,
+  accumulateStats,
+  pruneStats,
+  statsView,
+  STATS_KEY,
+  STATS_LIMIT_DAYS,
   formatNumber,
   compactNumber,
   formatDuration,
@@ -329,4 +336,185 @@ test('normalizeUsage / mergeUsage 归一化各家用量格式', () => {
     completion: 2,
     total: 7,
   });
+});
+
+/* ------------------------------------------------------------------ */
+/* 用量统计账本                                                        */
+/*                                                                     */
+/* 背景：统计原本是每次从翻译记录现算的，于是「清空记录」这个隐私动作   */
+/* 会顺手把 Token 消耗、调用次数一起清零。现在统计单独落盘，两者解耦。  */
+/* ------------------------------------------------------------------ */
+
+const statsNow = new Date('2026-10-11T20:00:00').getTime();
+const foldEntries = (list) => list.reduce((acc, entry) => accumulateStats(acc, entry), createStats());
+
+test('统计账本：累加后展开的结果与从记录现算完全一致', () => {
+  assert.deepEqual(statsView(foldEntries(sampleEntries), { days: 7, now: statsNow }), computeStats(sampleEntries, { days: 7, now: statsNow }));
+  assert.deepEqual(statsView(createStats(), { days: 7, now: statsNow }).total, computeStats([], { days: 7, now: statsNow }).total);
+});
+
+test('统计账本：JSON 往返（写入 chrome.storage 的形态）不丢数据', () => {
+  const ledger = foldEntries(sampleEntries);
+  const restored = normalizeStats(JSON.parse(JSON.stringify(ledger)));
+  assert.deepEqual(restored, ledger);
+  assert.deepEqual(statsView(restored, { days: 7, now: statsNow }), statsView(ledger, { days: 7, now: statsNow }));
+});
+
+test('统计账本：累加与裁剪都是纯函数，不修改入参', () => {
+  const base = foldEntries(sampleEntries);
+  const snapshot = JSON.parse(JSON.stringify(base));
+
+  const grown = accumulateStats(base, makeEntry({ ts: statsNow, kind: 'page', tokens: { prompt: 1, completion: 1, total: 2 } }));
+  pruneStats(base, new Date('2027-06-01T12:00:00').getTime());
+
+  assert.deepEqual(base, snapshot, '入参不应被累加或裁剪改写');
+  assert.notEqual(grown.total.count, base.total.count);
+});
+
+test('统计账本：pruneStats 只裁掉过期的每日数据，累计总计仍然完整', () => {
+  const pruned = pruneStats(foldEntries(sampleEntries), statsNow);
+  assert.deepEqual(Object.keys(pruned.daily).sort(), ['2026-10-09', '2026-10-11'], `${STATS_LIMIT_DAYS} 天内的数据应保留`);
+  assert.equal(pruned.total.count, 3);
+  assert.equal(pruned.total.tokens.total, 3450);
+
+  // 远超出保留窗口后每日数据被清空，但总计与分布代表真实发生过的用量，必须留着
+  const dropped = pruneStats(pruned, new Date('2027-06-01T12:00:00').getTime());
+  assert.deepEqual(Object.keys(dropped.daily), []);
+  assert.equal(dropped.total.count, 3);
+  assert.equal(dropped.total.tokens.total, 3450);
+  assert.deepEqual(dropped.byKind.summary.tokens, { prompt: 2000, completion: 300, total: 2300 });
+  assert.equal(dropped.byModel['deepseek-flash'].count, 2);
+});
+
+test('统计账本：normalizeStats 能消化脏数据与旧结构', () => {
+  const empty = normalizeStats(null);
+  assert.deepEqual(empty.total, {
+    count: 0,
+    tokens: { prompt: 0, completion: 0, total: 0 },
+    inputChars: 0,
+    outputChars: 0,
+    durationMs: 0,
+  });
+  assert.deepEqual(empty.byKind, {});
+  assert.deepEqual(empty.byModel, {});
+  assert.deepEqual(empty.daily, {});
+
+  const dirty = normalizeStats({
+    total: { count: -3, tokens: { prompt: 'x' }, inputChars: 'y' },
+    byKind: { page: { count: 1, tokens: { prompt_tokens: 4 } }, '': { count: 9 } },
+    byModel: { 'm': null },
+    daily: { '2026-10-11': { count: 2, tokens: { total_tokens: 10 } }, 'not-a-date': { count: 5 } },
+  });
+  assert.equal(dirty.total.count, 0);
+  assert.deepEqual(dirty.total.tokens, { prompt: 0, completion: 0, total: 0 });
+  assert.equal(dirty.byKind[''], undefined, '空键应被丢弃');
+  assert.deepEqual(dirty.byKind.page.tokens, { prompt: 4, completion: 0, total: 4 });
+  assert.equal(dirty.byModel.m.count, 0);
+  assert.deepEqual(Object.keys(dirty.daily), ['2026-10-11']);
+});
+
+/* ------------------------------------------------------------------ */
+/* 记录与统计的独立性（用内存版 chrome.storage 跑真实的写入路径）        */
+/* ------------------------------------------------------------------ */
+
+/** 内存版 chrome.storage，让 storage.js 能在 Node 里直接跑。 */
+function installChromeStub(seed = {}) {
+  const store = { local: { ...seed }, sync: {} };
+  const listeners = new Set();
+  const makeArea = (name) => ({
+    async get(keys) {
+      const source = store[name];
+      if (keys == null) return { ...source };
+      const out = {};
+      for (const key of Array.isArray(keys) ? keys : [keys]) {
+        if (key in source) out[key] = source[key];
+      }
+      return out;
+    },
+    async set(items) {
+      const changes = {};
+      for (const [key, value] of Object.entries(items)) {
+        changes[key] = { oldValue: store[name][key], newValue: value };
+        store[name][key] = value;
+      }
+      for (const listener of [...listeners]) listener(changes, name);
+    },
+    async remove(keys) {
+      for (const key of Array.isArray(keys) ? keys : [keys]) delete store[name][key];
+    },
+  });
+  globalThis.chrome = {
+    storage: {
+      local: makeArea('local'),
+      sync: makeArea('sync'),
+      onChanged: { addListener: (fn) => listeners.add(fn), removeListener: (fn) => listeners.delete(fn) },
+    },
+  };
+  return store;
+}
+
+test('清空翻译记录不会连带清零用量统计', async () => {
+  installChromeStub();
+  const { appendHistory, loadHistory, clearHistory, loadStats, clearStats } = await import('../src/lib/storage.js');
+  const stats = async () => statsView(await loadStats(), { days: 7 });
+
+  await appendHistory(
+    makeEntry({
+      kind: 'page',
+      model: 'deepseek-flash',
+      inputChars: 100,
+      outputChars: 80,
+      durationMs: 1200,
+      tokens: { prompt: 500, completion: 600, total: 1100 },
+    }),
+    300,
+  );
+  await appendHistory(
+    makeEntry({
+      kind: 'selection',
+      model: 'deepseek-flash',
+      inputChars: 5,
+      outputChars: 6,
+      durationMs: 300,
+      tokens: { prompt: 20, completion: 30, total: 50 },
+    }),
+    300,
+  );
+
+  assert.equal((await stats()).total.count, 2);
+  assert.equal((await stats()).total.tokens.total, 1150);
+  assert.equal((await loadHistory()).length, 2);
+
+  // 清空记录是隐私动作：记录清空，统计原地不动
+  await clearHistory();
+  assert.equal((await loadHistory()).length, 0);
+  assert.equal((await stats()).total.count, 2, '统计不应被清空记录连带清零');
+  assert.equal((await stats()).total.tokens.total, 1150);
+
+  // 清空统计只清账本
+  await clearStats();
+  assert.equal((await stats()).total.count, 0);
+
+  // 清空后继续翻译：账本从 0 重新累计，记录与账本互不覆盖
+  await appendHistory(makeEntry({ kind: 'summary', model: 'gpt-4o-mini', tokens: { prompt: 1, completion: 2, total: 3 } }), 300);
+  assert.equal((await stats()).total.count, 1);
+  assert.equal((await stats()).total.tokens.total, 3);
+  assert.equal((await loadHistory()).length, 1);
+});
+
+test('老版本升级：账本缺失时用现有记录回填一次，且显式清空后不再复活', async () => {
+  const store = installChromeStub({ ait_history: sampleEntries });
+  const { ensureStats, loadStats, clearStats } = await import('../src/lib/storage.js');
+
+  assert.equal(store.local[STATS_KEY], undefined, '前置条件：只有记录，没有账本');
+
+  const seeded = await ensureStats(store.local.ait_history);
+  assert.equal(statsView(seeded, { days: 7, now: statsNow }).total.count, 3, '应回填历史记录的用量');
+  assert.equal((await loadStats()).total.tokens.total, 3450);
+  assert.equal((await loadStats()).total.count, 3, '回填后再次读取不应重复累加');
+
+  // 显式清空统计写的是空账本而非删键：记录还在也不该被回填复活
+  await clearStats();
+  await ensureStats(store.local.ait_history);
+  assert.equal((await loadStats()).total.count, 0);
 });

@@ -12,9 +12,13 @@ import {
   clearHistory,
   trimHistory,
   onHistoryChanged,
+  ensureStats,
+  clearStats,
+  onStatsChanged,
 } from '../lib/storage.js';
 import {
-  computeStats,
+  statsView,
+  createStats,
   formatNumber,
   compactNumber,
   formatDuration,
@@ -38,6 +42,7 @@ const els = {
   chartHint: $('chartHint'),
   kindDist: $('kindDist'),
   modelDist: $('modelDist'),
+  clearStatsBtn: $('clearStats'),
   // 历史
   historyList: $('historyList'),
   historySummary: $('historySummary'),
@@ -69,6 +74,8 @@ const els = {
 
 let settings = { ...DEFAULT_SETTINGS };
 let entries = [];
+// 用量账本与翻译记录是两份独立的数据，清空记录不会动到它
+let statsData = createStats();
 let activeView = 'dashboard';
 let saveTimer = null;
 
@@ -203,7 +210,7 @@ function statCard(label, value, sub) {
 
 function renderDashboard() {
   const days = Number(els.statsRange.value) || 14;
-  const stats = computeStats(entries, { days });
+  const stats = statsView(statsData, { days });
   const { total, today, week, daily } = stats;
 
   els.statGrid.innerHTML = [
@@ -350,9 +357,9 @@ async function handleHistoryAction(event) {
   }
 
   if (button.dataset.action === 'delete' && id) {
+    // 只删记录：账本记的是真实发生过的模型调用，删一条留存内容不该改写用量
     entries = await deleteHistoryEntry(id);
     renderHistory();
-    renderDashboard();
     toast('已删除该条记录');
   }
 }
@@ -418,11 +425,17 @@ function bindEvents() {
   els.historyList.addEventListener('click', handleHistoryAction);
 
   els.clearHistoryBtn.addEventListener('click', async () => {
-    if (!window.confirm('确定要清空全部翻译记录吗？此操作不可撤销。')) return;
+    if (!window.confirm('确定要清空全部翻译记录吗？此操作不可撤销。\n\n「概览与统计」是独立的用量账本，不受影响。')) return;
     entries = await clearHistory();
     renderHistory();
+    toast('已清空翻译记录，统计已保留');
+  });
+
+  els.clearStatsBtn.addEventListener('click', async () => {
+    if (!window.confirm('确定清空用量统计吗？\n\nToken 消耗、调用次数与趋势图都会归零，翻译记录不受影响。此操作不可撤销。')) return;
+    statsData = await clearStats();
     renderDashboard();
-    toast('已清空翻译记录');
+    toast('已清空用量统计，翻译记录已保留');
   });
 
   els.sourceLang.addEventListener('change', () => persist({ sourceLang: els.sourceLang.value }));
@@ -479,9 +492,13 @@ function bindEvents() {
 
   onHistoryChanged((next) => {
     entries = next;
-    if (activeView === 'dashboard') renderDashboard();
     if (activeView === 'history') renderHistory();
     renderHistorySummary();
+  });
+
+  onStatsChanged((next) => {
+    statsData = next;
+    if (activeView === 'dashboard') renderDashboard();
   });
 }
 
@@ -489,6 +506,8 @@ async function init() {
   initSelects();
   settings = await getSettings();
   entries = await loadHistory();
+  // 老版本只有记录、没有账本：这里回填一次，升级后统计不会从 0 开始
+  statsData = await ensureStats(entries);
   fillForm();
   bindEvents();
   renderConnStatus();

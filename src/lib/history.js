@@ -5,7 +5,10 @@
 import { normalizeUsage, mergeUsage } from './api.js';
 
 export const HISTORY_KEY = 'ait_history';
+export const STATS_KEY = 'ait_stats';
 export const PREVIEW_LIMIT = 500;
+/** 每日趋势保留的天数上限：更早的每日数据会被裁掉，累计总计不受影响。 */
+export const STATS_LIMIT_DAYS = 90;
 
 export const KIND_LABELS = Object.freeze({
   page: '整页翻译',
@@ -84,70 +87,161 @@ export function dateKey(ts) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/* ------------------------------------------------------------------ */
+/* 用量统计账本                                                        */
+/*                                                                     */
+/* 统计之所以要独立存储，是因为「翻译记录」里有 URL、页面标题、原文与   */
+/* 译文预览这些敏感内容——用户清空它多半是为了隐私；而统计只是一组累计  */
+/* 计数，不该被这个动作连带清零。两者存在不同的键里，互不影响。        */
+/* ------------------------------------------------------------------ */
+
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 一个可累加的计数桶。 */
+function bucketOf(source) {
+  return {
+    count: Math.max(0, Number(source?.count) || 0),
+    tokens: normalizeUsage(source?.tokens),
+    inputChars: Math.max(0, Number(source?.inputChars) || 0),
+    outputChars: Math.max(0, Number(source?.outputChars) || 0),
+    durationMs: Math.max(0, Number(source?.durationMs) || 0),
+  };
+}
+
+/** 补上平均耗时，作为对外统一的输出形状。 */
+function sealed(bucket) {
+  return { ...bucket, avgDurationMs: bucket.count ? Math.round(bucket.durationMs / bucket.count) : 0 };
+}
+
+/** 就地累加一条记录（调用方需保证 bucket 是新对象）。 */
+function addToBucket(bucket, entry) {
+  bucket.count += 1;
+  bucket.tokens = mergeUsage(bucket.tokens, entry?.tokens);
+  bucket.inputChars += Math.max(0, Number(entry?.inputChars) || 0);
+  bucket.outputChars += Math.max(0, Number(entry?.outputChars) || 0);
+  bucket.durationMs += Math.max(0, Number(entry?.durationMs) || 0);
+  return bucket;
+}
+
+function sumBuckets(buckets) {
+  const acc = bucketOf(null);
+  for (const bucket of buckets) {
+    acc.count += bucket.count;
+    acc.tokens = mergeUsage(acc.tokens, bucket.tokens);
+    acc.inputChars += bucket.inputChars;
+    acc.outputChars += bucket.outputChars;
+    acc.durationMs += bucket.durationMs;
+  }
+  return acc;
+}
+
+/** 空的统计账本。 */
+export function createStats() {
+  return { v: 1, total: bucketOf(null), byKind: {}, byModel: {}, daily: {} };
+}
+
+/** 把 storage 里读到的任意值纠正成合法账本（旧结构 / 脏数据都能安全通过）。 */
+export function normalizeStats(raw) {
+  const stats = createStats();
+  if (!raw || typeof raw !== 'object') return stats;
+
+  stats.total = bucketOf(raw.total);
+  for (const [key, value] of Object.entries(raw.byKind || {})) {
+    if (key) stats.byKind[key] = bucketOf(value);
+  }
+  for (const [key, value] of Object.entries(raw.byModel || {})) {
+    if (key) stats.byModel[key] = bucketOf(value);
+  }
+  for (const [key, value] of Object.entries(raw.daily || {})) {
+    if (DATE_KEY_RE.test(key)) stats.daily[key] = bucketOf(value);
+  }
+  return stats;
+}
+
 /**
- * 生成统计信息：总计、按类型、按模型、最近 N 天趋势。
+ * 把一条记录累加进账本，返回新的账本（不修改入参）。
+ * 纯函数：写入路径据此在 storage 里做读-改-写。
+ */
+export function accumulateStats(stats, entry) {
+  const next = normalizeStats(stats);
+
+  addToBucket(next.total, entry);
+
+  const kind = entry?.kind || 'selection';
+  next.byKind[kind] = addToBucket(next.byKind[kind] || bucketOf(null), entry);
+
+  const model = entry?.model || '未知模型';
+  next.byModel[model] = addToBucket(next.byModel[model] || bucketOf(null), entry);
+
+  const date = dateKey(Number(entry?.ts) || Date.now());
+  next.daily[date] = addToBucket(next.daily[date] || bucketOf(null), entry);
+
+  return next;
+}
+
+/** 裁掉过期的每日数据；累计总计与按功能 / 按模型分布保留，它们代表真实发生过的用量。 */
+export function pruneStats(stats, now = Date.now()) {
+  const next = normalizeStats(stats);
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const cutoff = dateKey(startOfToday.getTime() - (STATS_LIMIT_DAYS - 1) * 86400000);
+  for (const key of Object.keys(next.daily)) {
+    if (key < cutoff) delete next.daily[key];
+  }
+  return next;
+}
+
+/**
+ * 把账本展开成管理面板要用的视图（结构与 computeStats 完全一致）。
+ * @param {object} stats 账本
+ * @param {{days?:number, now?:number}} options
+ */
+export function statsView(stats, options = {}) {
+  const ledger = normalizeStats(stats);
+  const days = Math.max(1, Math.min(Number(options.days) || 14, STATS_LIMIT_DAYS));
+  const now = Number(options.now) || Date.now();
+
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const window = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const key = dateKey(startOfToday.getTime() - i * 86400000);
+    window.push([key, ledger.daily[key] || bucketOf(null)]);
+  }
+
+  return {
+    total: sealed(ledger.total),
+    today: sealed(window[window.length - 1][1]),
+    week: sealed(sumBuckets(window.slice(-Math.min(7, days)).map(([, bucket]) => bucket))),
+    byKind: Object.entries(ledger.byKind).map(([kind, bucket]) => ({
+      kind,
+      label: kindLabel(kind),
+      ...sealed(bucket),
+    })),
+    byModel: Object.entries(ledger.byModel)
+      .map(([model, bucket]) => ({ model, ...sealed(bucket) }))
+      .sort((a, b) => b.tokens.total - a.tokens.total),
+    daily: window.map(([date, bucket]) => ({
+      date,
+      count: bucket.count,
+      tokens: bucket.tokens.total,
+      prompt: bucket.tokens.prompt,
+      completion: bucket.tokens.completion,
+    })),
+  };
+}
+
+/**
+ * 从一组记录现算统计（等价于把每条记录累加进空账本后再展开）。
+ * 用于升级回填与测试；管理面板走的是已落盘的账本。
  * @param {Array} entries
  * @param {{days?:number, now?:number}} options
  */
 export function computeStats(entries, options = {}) {
   const list = Array.isArray(entries) ? entries : [];
-  const days = Math.max(1, Math.min(Number(options.days) || 14, 90));
-  const now = Number(options.now) || Date.now();
-
-  const kindBuckets = new Map();
-  const byModel = new Map();
-  for (const entry of list) {
-    const kind = entry?.kind || 'selection';
-    if (!kindBuckets.has(kind)) kindBuckets.set(kind, []);
-    kindBuckets.get(kind).push(entry);
-
-    const model = entry?.model || '未知模型';
-    const current = byModel.get(model) || { model, count: 0, tokens: normalizeUsage(null) };
-    current.count += 1;
-    current.tokens = mergeUsage(current.tokens, entry?.tokens);
-    byModel.set(model, current);
-  }
-
-  const dayBuckets = new Map();
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
-  for (let i = days - 1; i >= 0; i -= 1) {
-    const key = dateKey(startOfToday.getTime() - i * 86400000);
-    dayBuckets.set(key, { date: key, count: 0, tokens: normalizeUsage(null), entries: [] });
-  }
-
-  const weekAgo = startOfToday.getTime() - 6 * 86400000;
-  let todayEntries = [];
-  let weekEntries = [];
-  for (const entry of list) {
-    const ts = Number(entry?.ts) || 0;
-    if (ts >= startOfToday.getTime()) todayEntries.push(entry);
-    if (ts >= weekAgo) weekEntries.push(entry);
-    const bucket = dayBuckets.get(dateKey(ts));
-    if (!bucket) continue;
-    bucket.count += 1;
-    bucket.tokens = mergeUsage(bucket.tokens, entry?.tokens);
-    bucket.entries.push(entry);
-  }
-
-  return {
-    total: sumEntries(list),
-    today: sumEntries(todayEntries),
-    week: sumEntries(weekEntries),
-    byKind: [...kindBuckets.entries()].map(([kind, items]) => ({
-      kind,
-      label: kindLabel(kind),
-      ...sumEntries(items),
-    })),
-    byModel: [...byModel.values()].sort((a, b) => b.tokens.total - a.tokens.total),
-    daily: [...dayBuckets.values()].map(({ date, count, tokens }) => ({
-      date,
-      count,
-      tokens: tokens.total,
-      prompt: tokens.prompt,
-      completion: tokens.completion,
-    })),
-  };
+  const ledger = list.reduce((acc, entry) => accumulateStats(acc, entry), createStats());
+  return statsView(ledger, options);
 }
 
 /** 千分位格式化。 */

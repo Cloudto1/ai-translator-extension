@@ -80,7 +80,7 @@
 
         <div class="sidebar-foot">
           <p class="conn" id="connStatus"><i class="dot"></i><span>正在读取配置…</span></p>
-          <p class="muted">版本 1.1.0</p>
+          <p class="muted">版本 1.2.0</p>
         </div>
       </aside>
 
@@ -90,7 +90,7 @@
           <header class="view-head">
             <div>
               <h2>概览与统计</h2>
-              <p class="muted">Token 消耗、调用次数与最近的使用情况</p>
+              <p class="muted">Token 消耗、调用次数与最近的使用情况。统计独立累计，清空记录不会影响它。</p>
             </div>
             <div class="view-actions">
               <select id="statsRange" class="input input-sm" title="统计周期">
@@ -98,6 +98,7 @@
                 <option value="14" selected>近 14 天</option>
                 <option value="30">近 30 天</option>
               </select>
+              <button class="btn btn-danger" id="clearStats" type="button">清空统计</button>
             </div>
           </header>
 
