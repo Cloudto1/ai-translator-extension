@@ -27,6 +27,7 @@
     CMD_TRANSLATE_SELECTION: 'CMD_TRANSLATE_SELECTION',
     RUN_TRANSLATE_PAGE: 'RUN_TRANSLATE_PAGE',
     RUN_SUMMARIZE_PAGE: 'RUN_SUMMARIZE_PAGE',
+    CACHE_CLEARED: 'CACHE_CLEARED',
   };
 
   const MAX_TEXT_NODES = 1500;
@@ -1146,6 +1147,12 @@
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const type = msg?.type;
     if (type === 'PING') {
+      sendResponse({ ok: true });
+      return true;
+    }
+    // 后台清空了持久缓存，进程内记忆也一并丢掉，否则页面里还会复用旧译文
+    if (type === MSG.CACHE_CLEARED) {
+      watchMemory = { lang: '', map: new Map() };
       sendResponse({ ok: true });
       return true;
     }

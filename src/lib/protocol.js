@@ -20,6 +20,10 @@ export const MSG = Object.freeze({
   RUN_ON_TAB: 'RUN_ON_TAB',
   PING: 'PING',
   RESET_SETTINGS: 'RESET_SETTINGS',
+  // 翻译缓存
+  GET_CACHE_STATS: 'GET_CACHE_STATS',
+  CLEAR_CACHE: 'CLEAR_CACHE',
+  CACHE_CLEARED: 'CACHE_CLEARED',
 });
 
 export const PORT_NAME = 'ait-port';

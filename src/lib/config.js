@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   disableThinking: true, // 关闭推理模型的思考过程，显著提升翻译速度
   autoTranslateSelection: false, // 划词后自动翻译（无需点击按钮）
   autoTranslateDynamic: true, // 持续翻译：整页翻译激活期间，新加载 / 新展开的内容自动补译
+  cacheEnabled: true, // 按站点缓存译文：同站跨页面复用，避免站内导航重复翻译与重复付费
   pageMode: 'replace', // replace（替换原文） | bilingual（双语对照）
   summaryLength: 'medium', // short | medium | detailed
   historyLimit: 300, // 本地翻译历史最多保留条数
@@ -84,6 +85,7 @@ export function normalizeSettings(raw) {
   s.disableThinking = !isFalsy(s.disableThinking);
   s.autoTranslateSelection = isTruthy(s.autoTranslateSelection);
   s.autoTranslateDynamic = !isFalsy(s.autoTranslateDynamic);
+  s.cacheEnabled = !isFalsy(s.cacheEnabled);
   return s;
 }
 

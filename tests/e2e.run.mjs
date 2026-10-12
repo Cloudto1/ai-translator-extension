@@ -42,6 +42,12 @@ const EN_PAGE = `<!DOCTYPE html>
 <footer>Copyright 2026 Example Inc. All rights reserved.</footer>
 </body></html>`;
 
+/** 同站点的另一个地址，正文只有一段与 EN_PAGE 的 #p1 完全相同的英文，用于验证缓存复用。 */
+const EN_REPEAT_PAGE = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Repeated paragraph</title></head><body>
+<main><p id="r1">Artificial intelligence is transforming the way we work and live.</p></main>
+</body></html>`;
+
 const ZH_PAGE = `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>人工智能的未来</title></head><body>
 <h1>人工智能的未来</h1>
@@ -169,6 +175,7 @@ async function main() {
   server = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     if (req.url?.startsWith('/zh')) res.end(ZH_PAGE);
+    else if (req.url?.startsWith('/en-repeat')) res.end(EN_REPEAT_PAGE);
     else res.end(EN_PAGE);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -442,6 +449,50 @@ async function main() {
     assert(countCJK(t) === 0, `恢复原文后不应继续翻译：${t}`);
   });
 
+  log('\n【2.6】翻译缓存（按站点跨页面复用）');
+  await step('同站点另一个页面完全命中缓存，不再调用模型', async () => {
+    await sw.evaluate(() => chrome.storage.local.remove('ait_translation_cache'));
+
+    // 页面 A：整页翻译，把译文写进缓存
+    await page.goto(`${baseUrl}/en`);
+    await waitFor(async () => page.locator('#p1').isVisible(), { label: '缓存页 A 加载' });
+    await page.waitForTimeout(500);
+    await sendToTab(`${baseUrl}/en`, 'RUN_TRANSLATE_PAGE');
+    const translatedA = await waitFor(
+      async () => {
+        const t = await page.textContent('#p1');
+        return countCJK(t) >= 5 ? t : null;
+      },
+      { label: '页面 A 翻译完成', timeout: 60000 },
+    );
+    const afterA = await countPageHistory();
+
+    // 页面 B：同站点另一个地址，正文只有与 A 的 #p1 完全相同的一段英文
+    await page.goto(`${baseUrl}/en-repeat`);
+    await waitFor(async () => page.locator('#r1').isVisible(), { label: '缓存页 B 加载' });
+    await page.waitForTimeout(500);
+    const sent = await sendToTab(`${baseUrl}/en-repeat`, 'RUN_TRANSLATE_PAGE');
+    assert(sent.ok, `命令下发失败：${sent.message}`);
+
+    const translatedB = await waitFor(
+      async () => {
+        const t = await page.textContent('#r1');
+        return countCJK(t) >= 5 ? t : null;
+      },
+      { label: '页面 B 复用译文', timeout: 30000 },
+    );
+    assert(
+      translatedB.trim() === translatedA.trim(),
+      `跨页面复用应得到同一译文：${translatedA} vs ${translatedB}`,
+    );
+
+    const afterB = await countPageHistory();
+    assert(afterB === afterA, `全量命中缓存不应新增模型调用：${afterA} → ${afterB}`);
+
+    // 回到标准测试页，后面的用例依赖这个地址
+    await page.goto(`${baseUrl}/en`);
+    await waitFor(async () => page.locator('#p1').isVisible(), { label: '返回测试页' });
+  });
 
   log('\n【2.7】站内连续导航（模拟"点着点着就不翻了"）');
   await step('连续切换路由触发补译限流后，翻译不会永久失效', async () => {
@@ -747,6 +798,37 @@ async function main() {
       timeout: 10000,
     });
     assert(await toggle.isChecked(), '开关应切回开启');
+  });
+
+  await step('管理面板可开关翻译缓存并清空', async () => {
+    await optionsPage.click('.nav-item[data-view="language"]');
+    const cacheToggle = optionsPage.locator('#cacheEnabled');
+    const cacheLabel = optionsPage.locator('label.switch:has(#cacheEnabled)');
+    assert(await cacheToggle.isChecked(), '翻译缓存默认应为开启');
+
+    await cacheLabel.click();
+    await waitFor(async () => (await readSettings())?.cacheEnabled === false, {
+      label: '缓存开关关闭写入 storage',
+      timeout: 10000,
+    });
+    await cacheLabel.click();
+    await waitFor(async () => (await readSettings())?.cacheEnabled === true, {
+      label: '缓存开关回到开启',
+      timeout: 10000,
+    });
+
+    const stats = await optionsPage.textContent('#cacheStats');
+    assert(stats && stats.length > 0, '缓存占用应展示出来');
+
+    // 清空按钮带确认框；对话框处理器已在【7】初始化时统一接管
+    await optionsPage.click('#clearCache');
+    await waitFor(
+      async () => {
+        const text = await optionsPage.textContent('#cacheStats');
+        return text?.includes('缓存为空') ? text : null;
+      },
+      { label: '缓存已清空', timeout: 10000 },
+    );
   });
 
   await step('管理面板可测试 API 连接', async () => {

@@ -12,6 +12,7 @@ import {
   accumulateStats,
   pruneStats,
 } from './history.js';
+import { CACHE_KEY } from './cache.js';
 
 function area() {
   return chrome.storage?.sync || chrome.storage?.local;
@@ -184,4 +185,36 @@ export function onStatsChanged(callback) {
   };
   chrome.storage.onChanged.addListener(handler);
   return () => chrome.storage.onChanged.removeListener(handler);
+}
+
+/* ------------------------------------------------------------------ */
+/* 翻译缓存（存放在 local，跨页面 / 刷新后依然可用）                    */
+/* ------------------------------------------------------------------ */
+
+export async function loadCache() {
+  try {
+    const data = await chrome.storage.local.get(CACHE_KEY);
+    return Array.isArray(data?.[CACHE_KEY]) ? data[CACHE_KEY] : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveCache(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  try {
+    await chrome.storage.local.set({ [CACHE_KEY]: list });
+  } catch (err) {
+    console.warn('[AI翻译] 写入翻译缓存失败：', err);
+  }
+  return list;
+}
+
+export async function clearCache() {
+  try {
+    await chrome.storage.local.remove(CACHE_KEY);
+  } catch (err) {
+    console.warn('[AI翻译] 清空翻译缓存失败：', err);
+  }
+  return [];
 }

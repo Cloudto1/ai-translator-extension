@@ -18,6 +18,16 @@ import {
   languageHint,
 } from '../src/lib/prompts.js';
 import {
+  siteKeyOf,
+  cacheKeyOf,
+  lookupTranslations,
+  putTranslations,
+  pruneCache,
+  isCacheable,
+  cacheSizeBytes,
+  MAX_CACHED_SOURCE_CHARS,
+} from '../src/lib/cache.js';
+import {
   makeEntry,
   pruneHistory,
   sumEntries,
@@ -140,6 +150,74 @@ test('findUntranslated 返回正确的下标', () => {
 test('estimateMaxTokens 在合理区间内', () => {
   assert.equal(estimateMaxTokens(['short']), 2048);
   assert.ok(estimateMaxTokens([ 'x'.repeat(5000) ]) <= 16000);
+});
+
+test('siteKeyOf 取站点标识：去 www、忽略端口与路径', () => {
+  assert.equal(siteKeyOf('https://www.example.com/a/b?c=1'), 'example.com');
+  assert.equal(siteKeyOf('http://127.0.0.1:8080/en'), '127.0.0.1');
+  assert.equal(siteKeyOf('https://EXAMPLE.com/'), 'example.com');
+  // 子域各自独立：user.github.io 这类不能被并成同一个站点，否则跨站串味
+  assert.equal(siteKeyOf('https://user.github.io/a'), 'user.github.io');
+  assert.equal(siteKeyOf('not a url'), '');
+  assert.equal(siteKeyOf(''), '');
+});
+
+test('缓存键同时包含站点与目标语言', () => {
+  const base = cacheKeyOf('example.com', 'zh', 'Hello');
+  assert.notEqual(base, cacheKeyOf('other.com', 'zh', 'Hello'));
+  assert.notEqual(base, cacheKeyOf('example.com', 'ja', 'Hello'));
+  assert.equal(base, cacheKeyOf('example.com', 'zh', 'Hello'));
+});
+
+test('lookupTranslations 逐条命中并给出未命中下标', () => {
+  const entries = putTranslations([], 'example.com', 'zh', ['Home', 'About'], ['首页', '关于']);
+  const looked = lookupTranslations(entries, 'example.com', 'zh', ['About', 'New', 'Home']);
+  assert.deepEqual(looked.values, ['关于', undefined, '首页']);
+  assert.deepEqual(looked.missTexts, ['New']);
+  assert.deepEqual(looked.missIndexes, [1]);
+});
+
+test('缓存按站点与目标语言隔离，不跨站复用', () => {
+  const entries = putTranslations([], 'a.com', 'zh', ['Spring'], ['春天']);
+  assert.equal(lookupTranslations(entries, 'a.com', 'zh', ['Spring']).values[0], '春天');
+  // 换站点取不到：同一个词在别的站点可能完全是另一个意思
+  assert.equal(lookupTranslations(entries, 'b.com', 'zh', ['Spring']).values[0], undefined);
+  // 换目标语言也取不到
+  assert.equal(lookupTranslations(entries, 'a.com', 'ja', ['Spring']).values[0], undefined);
+});
+
+test('putTranslations 实现 LRU：更新提到最前，超限丢最久未用', () => {
+  let entries = putTranslations([], 'a.com', 'zh', ['one', 'two', 'three'], ['一', '二', '三']);
+  assert.deepEqual(entries.map((e) => e.v), ['三', '二', '一'], '最近使用应排在最前');
+
+  entries = putTranslations(entries, 'a.com', 'zh', ['one'], ['壹']);
+  assert.equal(entries[0].v, '壹', '更新过的条目应移到最前');
+  assert.equal(entries.length, 3, '更新不应新增条目');
+
+  entries = putTranslations(entries, 'a.com', 'zh', ['four'], ['四'], { limit: 2 });
+  assert.equal(entries.length, 2, '超过上限应被裁剪');
+  assert.deepEqual(entries.map((e) => e.v), ['四', '壹']);
+});
+
+test('isCacheable 跳过无价值条目', () => {
+  assert.equal(isCacheable('Hello', '你好'), true);
+  assert.equal(isCacheable('Hello', ''), false);
+  assert.equal(isCacheable('Hello', 'Hello'), false, '译文与原文相同不必缓存');
+  assert.equal(isCacheable('', '你好'), false);
+  assert.equal(isCacheable('x'.repeat(MAX_CACHED_SOURCE_CHARS + 1), '译文'), false, '超长原文不缓存');
+});
+
+test('putTranslations 不会写入无价值条目', () => {
+  const entries = putTranslations([], 'a.com', 'zh', ['A', 'B'], ['A', '']);
+  assert.equal(entries.length, 0);
+});
+
+test('pruneCache 与 cacheSizeBytes', () => {
+  const list = [{ k: 'a', v: '1' }, { k: 'b', v: '2' }, { k: 'c', v: '3' }];
+  assert.equal(pruneCache(list, 2).length, 2);
+  assert.equal(pruneCache(list, 0).length, 3, '非法上限退回默认值而不是清空');
+  assert.ok(cacheSizeBytes(list) > 0);
+  assert.equal(cacheSizeBytes([]), 0);
 });
 
 test('condensePageText 去掉重复行与导航噪声', () => {
@@ -311,11 +389,14 @@ test('normalizeSettings 处理源语言与历史上限', () => {
   assert.equal(normalizeSettings({ historyLimit: 5 }).historyLimit, DEFAULT_SETTINGS.historyLimit);
   assert.equal(normalizeSettings({ historyLimit: 500 }).historyLimit, 500);
   assert.equal(normalizeSettings({ historyLimit: 99999 }).historyLimit, 2000);
-  // 持续翻译：缺省开启，显式关闭需被保留
+  // 持续翻译与翻译缓存：缺省开启，显式关闭需被保留
   assert.equal(normalizeSettings({}).autoTranslateDynamic, true);
   assert.equal(normalizeSettings({ autoTranslateDynamic: false }).autoTranslateDynamic, false);
   assert.equal(normalizeSettings({ autoTranslateDynamic: 'off' }).autoTranslateDynamic, false);
   assert.equal(normalizeSettings({ autoTranslateDynamic: true }).autoTranslateDynamic, true);
+  assert.equal(normalizeSettings({}).cacheEnabled, true);
+  assert.equal(normalizeSettings({ cacheEnabled: false }).cacheEnabled, false);
+  assert.equal(normalizeSettings({ cacheEnabled: 'off' }).cacheEnabled, false);
 });
 
 test('normalizeUsage / mergeUsage 归一化各家用量格式', () => {

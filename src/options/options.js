@@ -60,6 +60,9 @@ const els = {
   historyLimit: $('historyLimit'),
   autoTranslateSelection: $('autoTranslateSelection'),
   autoTranslateDynamic: $('autoTranslateDynamic'),
+  cacheEnabled: $('cacheEnabled'),
+  cacheStats: $('cacheStats'),
+  clearCacheBtn: $('clearCache'),
   disableThinking: $('disableThinking'),
   // API
   apiKey: $('apiKey'),
@@ -117,6 +120,7 @@ function switchView(name) {
   if (location.hash.slice(1) !== name) window.history.replaceState(null, '', `#${name}`);
   if (name === 'dashboard') renderDashboard();
   if (name === 'history') renderHistory();
+  if (name === 'language') renderCacheStats();
 }
 
 /* ------------------------------------------------------------------ */
@@ -143,6 +147,7 @@ function fillForm() {
   els.historyLimit.value = String(settings.historyLimit);
   els.autoTranslateSelection.checked = settings.autoTranslateSelection;
   els.autoTranslateDynamic.checked = settings.autoTranslateDynamic;
+  els.cacheEnabled.checked = settings.cacheEnabled;
   els.disableThinking.checked = settings.disableThinking;
 
   els.apiKey.value = settings.apiKey;
@@ -413,6 +418,29 @@ function initSelects() {
   els.targetLang.innerHTML = buildLangOptions('自动（中 ⇄ 英 互译）');
 }
 
+function formatBytes(bytes) {
+  const b = Number(bytes) || 0;
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1024 / 1024).toFixed(2)} MB`;
+}
+
+/** 展示翻译缓存的条数与占用；清空后可直接把返回值传进来，省一次消息往返。 */
+async function renderCacheStats(provided) {
+  if (!els.cacheStats) return;
+  let stats = provided;
+  if (!stats) {
+    stats = await chrome.runtime.sendMessage({ type: MSG.GET_CACHE_STATS }).catch(() => null);
+  }
+  if (!stats?.ok) {
+    els.cacheStats.textContent = '缓存状态读取失败';
+    return;
+  }
+  els.cacheStats.textContent = stats.count
+    ? `已缓存 ${formatNumber(stats.count)} 条译文，约 ${formatBytes(stats.bytes)}`
+    : '缓存为空';
+}
+
 function bindEvents() {
   els.nav.addEventListener('click', (event) => {
     const item = event.target.closest('.nav-item');
@@ -468,6 +496,13 @@ function bindEvents() {
   els.autoTranslateDynamic.addEventListener('change', () =>
     persist({ autoTranslateDynamic: els.autoTranslateDynamic.checked }),
   );
+  els.cacheEnabled.addEventListener('change', () => persist({ cacheEnabled: els.cacheEnabled.checked }));
+  els.clearCacheBtn.addEventListener('click', async () => {
+    if (!window.confirm('确定清空翻译缓存吗？清空后这些内容需要重新调用模型翻译。')) return;
+    const res = await chrome.runtime.sendMessage({ type: MSG.CLEAR_CACHE });
+    renderCacheStats(res);
+    toast('已清空翻译缓存');
+  });
   els.disableThinking.addEventListener('change', () => persist({ disableThinking: els.disableThinking.checked }));
 
   els.apiKey.addEventListener('input', () => persist({ apiKey: els.apiKey.value.trim() }, { immediate: false }));

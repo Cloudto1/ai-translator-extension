@@ -6,12 +6,28 @@
  */
 
 import { MSG, PORT_NAME, REQ, EVT } from '../lib/protocol.js';
-import { getSettings, saveSettings, resetSettings, appendHistory } from '../lib/storage.js';
+import {
+  getSettings,
+  saveSettings,
+  resetSettings,
+  appendHistory,
+  loadCache,
+  saveCache,
+  clearCache,
+} from '../lib/storage.js';
 import { makeEntry } from '../lib/history.js';
-import { translateTexts, translateOne } from '../lib/translate.js';
+import { translateTexts, translateOne, resolveRequestLanguagePair } from '../lib/translate.js';
 import { summarizePage } from '../lib/summarize.js';
-import { testConnection } from '../lib/api.js';
+import { testConnection, normalizeUsage } from '../lib/api.js';
 import { RUNTIME_LIMITS, validateSettings } from '../lib/config.js';
+import {
+  siteKeyOf,
+  lookupTranslations,
+  putTranslations,
+  isCacheable,
+  cacheSizeBytes,
+  DEFAULT_CACHE_LIMIT,
+} from '../lib/cache.js';
 
 const MENUS = [
   { id: 'ait-translate-selection', title: 'AI 翻译：翻译选中文本', contexts: ['selection'] },
@@ -96,6 +112,24 @@ async function notifyTab(tabId, message) {
   }
 }
 
+/**
+ * 广播「缓存已清空」。
+ * 页面里还有一份进程内翻译记忆，不同步清掉的话用户会以为缓存没生效。
+ * 这里直接 sendMessage，不用 notifyTab —— 不该为了广播去往无关标签页注入脚本。
+ */
+async function broadcastCacheCleared() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(
+      tabs
+        .filter((tab) => tab.id)
+        .map((tab) => chrome.tabs.sendMessage(tab.id, { type: MSG.CACHE_CLEARED }).catch(() => {})),
+    );
+  } catch (err) {
+    console.warn('[AI翻译] 广播缓存清空失败：', err);
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* 右键菜单与快捷键                                                    */
 /* ------------------------------------------------------------------ */
@@ -154,6 +188,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     notifyTab(tabId, { type: msg.command, text: msg.text })
       .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, ...errorPayload(err) }));
+    return true;
+  }
+
+  if (type === MSG.GET_CACHE_STATS) {
+    loadCache()
+      .then((entries) => sendResponse({ ok: true, count: entries.length, bytes: cacheSizeBytes(entries) }))
+      .catch((err) => sendResponse({ ok: false, ...errorPayload(err) }));
+    return true;
+  }
+
+  if (type === MSG.CLEAR_CACHE) {
+    clearCache()
+      .then(() => broadcastCacheCleared())
+      .then(() => sendResponse({ ok: true, count: 0, bytes: 0 }))
       .catch((err) => sendResponse({ ok: false, ...errorPayload(err) }));
     return true;
   }
@@ -227,39 +276,90 @@ chrome.runtime.onConnect.addListener((port) => {
 
       if (type === REQ.TRANSLATE_TEXTS) {
         const texts = payload?.texts || [];
-        const result = await translateTexts(settings, texts, {
-          sourceLang: payload?.sourceLang,
-          targetLang: payload?.targetLang,
-          signal: controller.signal,
-          limits: RUNTIME_LIMITS,
-          onProgress: (progress) => post({ id, type: 'PROGRESS', data: progress }),
-        });
+
+        // 按站点缓存：同站跨页面复用译文，避免站内导航或刷新时把导航栏、页脚、按钮重新翻一遍
+        const site = settings.cacheEnabled === false ? '' : siteKeyOf(meta.url || '');
+        const targetKey = site
+          ? resolveRequestLanguagePair(settings, texts, {
+              sourceLang: payload?.sourceLang,
+              targetLang: payload?.targetLang,
+            }).resolvedTarget
+          : '';
+
+        let cached = [];
+        let values = new Array(texts.length);
+        let missTexts = texts;
+        let missIndexes = texts.map((_, i) => i);
+        if (site) {
+          cached = await loadCache();
+          ({ values, missTexts, missIndexes } = lookupTranslations(cached, site, targetKey, texts));
+        }
+
+        let translations = values;
+        let sourceLang = settings.sourceLang;
+        let targetLang = targetKey;
+        let usage = normalizeUsage(null);
+        let requestCount = 0;
+
+        // 只有未命中的部分才发给模型
+        if (missTexts.length > 0) {
+          const result = await translateTexts(settings, missTexts, {
+            sourceLang: payload?.sourceLang,
+            targetLang: payload?.targetLang,
+            signal: controller.signal,
+            limits: RUNTIME_LIMITS,
+            onProgress: (progress) => post({ id, type: 'PROGRESS', data: progress }),
+          });
+          translations = values.slice();
+          missIndexes.forEach((originalIndex, k) => {
+            translations[originalIndex] = result.translations[k] ?? '';
+          });
+          sourceLang = result.sourceLang;
+          targetLang = result.targetLang;
+          usage = result.usage;
+          requestCount = result.requestCount || 0;
+
+          // 没有可入缓的内容就不写盘，避免每次整页翻译都重写整个缓存
+          if (site && missTexts.some((src, i) => isCacheable(src, result.translations[i]))) {
+            await saveCache(
+              putTranslations(cached, site, result.targetLang, missTexts, result.translations, {
+                limit: DEFAULT_CACHE_LIMIT,
+              }),
+            );
+          }
+        }
+
         post({
           id,
           type: EVT.RESULT,
           data: {
-            translations: result.translations,
-            sourceLang: result.sourceLang,
-            targetLang: result.targetLang,
-            usage: result.usage,
+            translations,
+            sourceLang,
+            targetLang,
+            usage,
+            cachedCount: texts.length - missTexts.length,
           },
         });
-        await recordHistory({
-          kind: 'page',
-          ts: startedAt,
-          durationMs: Date.now() - startedAt,
-          model: settings.model,
-          sourceLang: result.sourceLang,
-          targetLang: result.targetLang,
-          itemCount: texts.length,
-          inputChars: texts.reduce((sum, t) => sum + String(t || '').length, 0),
-          outputChars: result.translations.reduce((sum, t) => sum + String(t || '').length, 0),
-          tokens: result.usage,
-          url: meta.url || '',
-          title: meta.title || '',
-          sourcePreview: texts.join(' '),
-          resultPreview: result.translations.join(' '),
-        });
+
+        // 全部命中缓存时不写历史：这次没有真的调用模型，记进去会污染调用次数与 Token 统计
+        if (requestCount > 0) {
+          await recordHistory({
+            kind: 'page',
+            ts: startedAt,
+            durationMs: Date.now() - startedAt,
+            model: settings.model,
+            sourceLang,
+            targetLang,
+            itemCount: texts.length,
+            inputChars: texts.reduce((sum, t) => sum + String(t || '').length, 0),
+            outputChars: translations.reduce((sum, t) => sum + String(t || '').length, 0),
+            tokens: usage,
+            url: meta.url || '',
+            title: meta.title || '',
+            sourcePreview: texts.join(' '),
+            resultPreview: translations.join(' '),
+          });
+        }
         return;
       }
 

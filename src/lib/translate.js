@@ -199,6 +199,22 @@ async function translateBatch(settings, texts, lang, signal, sourceLang = 'auto'
 }
 
 /**
+ * 解析本次批量请求最终生效的语言对。
+ * 缓存键必须用同一个函数取目标语言，否则后台与 translateTexts 的口径会漂移，
+ * 出现「按 A 语言查缓存、按 B 语言翻译」的错配。
+ */
+export function resolveRequestLanguagePair(settings, texts, overrides = {}) {
+  const sample = (texts || []).join('\n').slice(0, 2000);
+  return resolveLanguagePair(
+    {
+      sourceLang: overrides.sourceLang ?? settings?.sourceLang,
+      targetLang: overrides.targetLang ?? settings?.targetLang,
+    },
+    sample,
+  );
+}
+
+/**
  * 批量翻译（全页面用）。
  * @param {object} settings
  * @param {string[]} texts 已去重的待翻译文本
@@ -217,14 +233,10 @@ export async function translateTexts(settings, texts, opts = {}) {
   };
   if (list.length === 0) return empty;
 
-  const sample = list.join('\n').slice(0, 2000);
-  const pair = resolveLanguagePair(
-    {
-      sourceLang: opts.sourceLang ?? settings.sourceLang,
-      targetLang: opts.targetLang ?? settings.targetLang,
-    },
-    sample,
-  );
+  const pair = resolveRequestLanguagePair(settings, list, {
+    sourceLang: opts.sourceLang,
+    targetLang: opts.targetLang,
+  });
   const lang = pair.resolvedTarget;
   const translations = new Array(list.length).fill('');
   let requestCount = 0;
