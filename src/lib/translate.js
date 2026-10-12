@@ -20,8 +20,8 @@ export function estimateMaxTokens(texts) {
   return Math.min(16000, Math.max(2048, Math.ceil(chars * 2)));
 }
 
-/** 把待翻译文本切成批（按条目数和字符数双限制）。 */
-export function chunkTexts(texts, { maxChars = 1400, maxItems = 20 } = {}) {
+/** 把待翻译文本切成批（按条目数和字符数双限制）。默认值与 RUNTIME_LIMITS 保持一致。 */
+export function chunkTexts(texts, { maxChars = 3000, maxItems = 40 } = {}) {
   const batches = [];
   let current = [];
   let currentChars = 0;

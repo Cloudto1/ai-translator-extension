@@ -22,8 +22,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
 });
 
 export const RUNTIME_LIMITS = Object.freeze({
-  maxCharsPerBatch: 1400,
-  maxItemsPerBatch: 20,
+  // 分批上限受「模型输出 token」约束，而非输入长度。
+  // estimateMaxTokens 按 chars × 2 申请输出额度：3000 字 → 6000 token，
+  // 对 DeepSeek（输出上限 8192）等主流模型留有安全余量；再往上（4000 字 → 8000）
+  // 会贴近上限，部分服务商会直接返回 400。
+  // 批次过大导致 JSON 解析失败时会自动拆半重试（见 translateBatch），因此放宽是安全的。
+  maxCharsPerBatch: 3000,
+  maxItemsPerBatch: 40,
   concurrency: 3,
   summaryMaxChars: 24000,
   selectionMaxChars: 6000,

@@ -7,9 +7,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { chatCompletion, testConnection, ApiError } from '../src/lib/api.js';
-import { translateOne, translateTexts } from '../src/lib/translate.js';
+import { translateOne, translateTexts, chunkTexts } from '../src/lib/translate.js';
 import { summarizePage } from '../src/lib/summarize.js';
 import { buildTranslateMessages } from '../src/lib/prompts.js';
+import { RUNTIME_LIMITS } from '../src/lib/config.js';
 import { API_CONFIG, EN_ARTICLE, EN_SEGMENTS, ZH_ARTICLE } from './fixtures.mjs';
 
 const settings = API_CONFIG;
@@ -105,15 +106,21 @@ test('全页面翻译：批量 15 段，数量与顺序一致', { skip }, async 
 });
 
 test('全页面翻译：超过单批上限时自动分多批', { skip }, async () => {
-  const many = Array.from({ length: 45 }, (_, i) => `${EN_SEGMENTS[i % EN_SEGMENTS.length]} (${i + 1})`);
+  // 输入规模由实际分批上限推导，别把上限写死在断言里——调整批次参数不该弄坏这个用例
+  const itemCount = RUNTIME_LIMITS.maxItemsPerBatch + 5;
+  const many = Array.from({ length: itemCount }, (_, i) => `${EN_SEGMENTS[i % EN_SEGMENTS.length]} (${i + 1})`);
+  const expectedBatches = chunkTexts(many, RUNTIME_LIMITS).length;
+
   const batches = [];
   const { translations } = await translateTexts(settings, many, {
     targetLang: 'zh',
     onProgress: (p) => batches.push(p),
   });
-  assert.equal(translations.length, 45);
-  assert.ok(batches.length >= 3, `应分批处理，实际 ${batches.length}`);
-  assert.ok(translations.every((t) => countCJK(t) >= 2));
+
+  assert.equal(translations.length, itemCount, '译文数量应与输入条目一致');
+  assert.ok(expectedBatches >= 2, `用例应构造出多批输入，实际 ${expectedBatches}`);
+  assert.equal(batches.length, expectedBatches, '进度回调次数应与批次数一致');
+  assert.ok(translations.every((t) => countCJK(t) >= 2), '每一条都应被翻译');
 });
 
 test('全页面翻译：模型把整句当专有名词时自动重试补译', { skip }, async () => {
