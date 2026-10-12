@@ -117,6 +117,13 @@
   }
 
   let settingsCache = null;
+
+  /**
+   * 会话内翻译记忆：同一个目标语言下，重复出现的原文直接复用上次译文，不再发请求。
+   * 页面里导航项、按钮文案这类重复短文本很多，命中后是零延迟。
+   */
+  let watchMemory = { lang: '', map: new Map() };
+
   async function getSettings(force = false) {
     if (settingsCache && !force) return settingsCache;
     const res = await sendMessage({ type: MSG.GET_SETTINGS });
@@ -124,8 +131,12 @@
     return settingsCache;
   }
 
-  chrome.storage?.onChanged?.addListener(() => {
+  chrome.storage?.onChanged?.addListener((changes) => {
+    // 只认设置本身的变更。历史记录写在 local，若不过滤会把翻译记忆一起清掉
+    if (!changes || !changes.ait_settings) return;
     settingsCache = null;
+    // 语言等设置可能被改过，旧译文不再可信，整块丢弃
+    watchMemory = { lang: '', map: new Map() };
   });
 
   /* ---------------------------------------------------------------- */
@@ -421,12 +432,26 @@
   const SKIP_SELECTOR =
     'script,style,noscript,textarea,input,select,option,code,pre,kbd,samp,var,svg,canvas,math,iframe,object,embed,video,audio,template,[contenteditable="true"],[translate="no"],.ait-host,.notranslate,[data-ait-ui]';
 
+  /* 持续翻译：整页翻译激活期间监听 DOM，把新出现 / 新展开的可视文本自动补译 */
+  const WATCH_ATTRS = ['style', 'class', 'hidden', 'open', 'aria-expanded', 'aria-hidden'];
+  const WATCH_DEBOUNCE_MS = 200; // 变动停下来后再等一小段就开翻，别让用户干等
+  const WATCH_MAX_WAIT_MS = 600; // 展开动画会持续产生变动，最多只压这么久就必须开翻
+  const MAX_WATCH_TEXTS = 400; // 单轮补译的文本条数上限
+  const MAX_WATCH_ROUNDS_PER_MIN = 20; // 每分钟最多补译轮次，防止页面持续变动导致无限调用
+
   const pageState = {
     running: false,
     originals: new Map(),
     inserted: [],
     request: null,
     active: false,
+    observer: null,
+    watchTimer: null,
+    watchFirstAt: 0,
+    watchRoots: new Set(),
+    watchRoundAt: [],
+    watchInFlight: false,
+    watchNotified: false,
   };
 
   function isVisible(el) {
@@ -438,20 +463,29 @@
     return el.getClientRects().length > 0;
   }
 
-  function collectTextNodes() {
-    const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT, {
+  /** 单个文本节点是否值得翻译。首次整页与增量补译共用同一套规则。 */
+  function acceptTextNode(node) {
+    const parent = node.parentElement;
+    if (!parent) return false;
+    if (parent.closest(SKIP_SELECTOR)) return false;
+    const trimmed = (node.nodeValue || '').trim();
+    if (!trimmed) return false;
+    if (trimmed.length < 2 && !/[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(trimmed)) return false;
+    if (!/[\p{L}\p{Sc}\p{N}]/u.test(trimmed)) return false;
+    if (!isVisible(parent)) return false;
+    return true;
+  }
+
+  /**
+   * 收集可翻译文本，按原文去重后返回 Map<原文, [{node, raw}]>。
+   * @param {Node} [root] 限定扫描范围（增量补译用）；缺省扫描整个文档。
+   * 已翻译过的节点（记录在 pageState.originals 里）会被跳过，因此增量调用天然幂等。
+   */
+  function collectTextNodes(root) {
+    const scope = root && root.nodeType === 1 && root.isConnected ? root : (document.body || document.documentElement);
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
-        const parent = node.parentElement;
-        if (!parent) return NodeFilter.FILTER_REJECT;
-        if (parent.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
-        const trimmed = (node.nodeValue || '').trim();
-        if (!trimmed) return NodeFilter.FILTER_REJECT;
-        if (trimmed.length < 2 && !/[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(trimmed)) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        if (!/[\p{L}\p{Sc}\p{N}]/u.test(trimmed)) return NodeFilter.FILTER_REJECT;
-        if (!isVisible(parent)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
+        return acceptTextNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
       },
     });
 
@@ -459,9 +493,11 @@
     let count = 0;
     let node = walker.nextNode();
     while (node && count < MAX_TEXT_NODES) {
-      const text = (node.nodeValue || '').trim();
-      if (!map.has(text)) map.set(text, []);
-      map.get(text).push({ node, raw: node.nodeValue });
+      if (!pageState.originals.has(node)) {
+        const text = (node.nodeValue || '').trim();
+        if (!map.has(text)) map.set(text, []);
+        map.get(text).push({ node, raw: node.nodeValue });
+      }
       count += 1;
       node = walker.nextNode();
     }
@@ -469,6 +505,8 @@
   }
 
   function restorePage() {
+    // 必须先停监听：下面的还原本身会产生大量 DOM 变更，否则会被当成新内容再翻一遍
+    stopWatching();
     for (const [node, raw] of pageState.originals) {
       if (node && node.isConnected) node.nodeValue = raw;
     }
@@ -476,7 +514,183 @@
     pageState.originals.clear();
     pageState.inserted = [];
     pageState.active = false;
+    pageState.watchRoundAt = [];
+    pageState.watchNotified = false;
     document.documentElement.removeAttribute('data-ait-translated');
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* 持续翻译：增量补译                                                */
+  /* ---------------------------------------------------------------- */
+
+  function startWatching() {
+    stopWatching();
+    if (!pageState.active) return;
+    pageState.observer = new MutationObserver(onMutations);
+    pageState.observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      // 折叠面板展开、tab 切换等只改属性不改结构，必须一起监听
+      attributes: true,
+      attributeFilter: WATCH_ATTRS,
+    });
+  }
+
+  function stopWatching() {
+    if (pageState.observer) {
+      pageState.observer.disconnect();
+      pageState.observer = null;
+    }
+    if (pageState.watchTimer) {
+      clearTimeout(pageState.watchTimer);
+      pageState.watchTimer = null;
+    }
+    pageState.watchFirstAt = 0;
+    pageState.watchRoots.clear();
+  }
+
+  function onMutations(mutations) {
+    if (!pageState.active || !pageState.observer) return;
+    for (const m of mutations) {
+      if (m.type === 'characterData') {
+        // 我们自己的写入会把节点登记进 originals，据此排除，避免自我触发成死循环
+        const target = m.target;
+        if (target && target.nodeType === 3 && target.parentElement && !pageState.originals.has(target)) {
+          pageState.watchRoots.add(target.parentElement);
+        }
+      } else if (m.type === 'childList') {
+        // 只扫新增节点自身，不要把父容器整个重扫：大容器上很浪费，还会捞回无关文本
+        for (const added of m.addedNodes || []) {
+          if (added.nodeType === 1) pageState.watchRoots.add(added);
+          else if (added.nodeType === 3 && added.parentElement) pageState.watchRoots.add(added.parentElement);
+        }
+      } else if (m.type === 'attributes') {
+        if (m.target && m.target.nodeType === 1) pageState.watchRoots.add(m.target);
+      }
+    }
+    if (pageState.watchRoots.size > 0) scheduleWatchRound();
+  }
+
+  function scheduleWatchRound() {
+    const now = Date.now();
+    if (!pageState.watchFirstAt) pageState.watchFirstAt = now;
+    // 防抖 + 最长等待：折叠展开动画会连续产生变动，不能被它一直往后推
+    const waited = now - pageState.watchFirstAt;
+    const delay = Math.max(0, Math.min(WATCH_DEBOUNCE_MS, WATCH_MAX_WAIT_MS - waited));
+    if (pageState.watchTimer) clearTimeout(pageState.watchTimer);
+    pageState.watchTimer = setTimeout(() => {
+      pageState.watchTimer = null;
+      pageState.watchFirstAt = 0;
+      runWatchRound();
+    }, delay);
+  }
+
+  /** 记录一轮成功译文，供后续重复原文复用。 */
+  function rememberTranslations(lang, sources, translations) {
+    const resolved = String(lang || '');
+    if (!resolved || !Array.isArray(translations)) return;
+    if (watchMemory.lang !== resolved) watchMemory = { lang: resolved, map: new Map() };
+    sources.forEach((src, i) => {
+      const dst = translations[i];
+      if (dst && String(dst).trim() && String(dst).trim() !== String(src).trim()) {
+        watchMemory.map.set(src, dst);
+      }
+    });
+  }
+
+  async function runWatchRound() {
+    if (!pageState.active || pageState.watchInFlight) return;
+
+    const roots = [...pageState.watchRoots];
+    pageState.watchRoots.clear();
+    if (roots.length === 0) return;
+
+    const map = new Map();
+    let truncated = false;
+    for (let i = 0; i < roots.length; i += 1) {
+      const root = roots[i];
+      if (!root || !root.isConnected) continue;
+      for (const [text, entries] of collectTextNodes(root)) {
+        if (!map.has(text)) map.set(text, []);
+        map.get(text).push(...entries);
+      }
+      if (map.size >= MAX_WATCH_TEXTS) {
+        // 达到单轮上限：剩下的根留到下一轮，避免丢内容
+        for (let j = i + 1; j < roots.length; j += 1) pageState.watchRoots.add(roots[j]);
+        truncated = true;
+        break;
+      }
+    }
+    const texts = [...map.keys()];
+    if (texts.length === 0) return;
+    if (truncated) scheduleWatchRound();
+
+    pageState.watchInFlight = true;
+    try {
+      const settings = await getSettings();
+      if (settings.autoTranslateDynamic === false) {
+        stopWatching();
+        return;
+      }
+
+      let count = 0;
+
+      // 先兑现翻译记忆：重复文案（导航项、按钮等）直接落译，零延迟零请求
+      const hitTexts = [];
+      const fresh = [];
+      for (const text of texts) {
+        if (watchMemory.map.has(text)) hitTexts.push(text);
+        else fresh.push(text);
+      }
+      if (hitTexts.length > 0) {
+        const hitMap = new Map();
+        hitTexts.forEach((text) => hitMap.set(text, map.get(text)));
+        count += applyTranslations(hitMap, hitTexts.map((t) => watchMemory.map.get(t)), settings.pageMode);
+      }
+      if (fresh.length === 0) {
+        notifyWatchResult(count);
+        return;
+      }
+
+      // 限流：页面频繁变动时不应无限调用模型
+      const now = Date.now();
+      pageState.watchRoundAt = pageState.watchRoundAt.filter((t) => now - t < 60000);
+      if (pageState.watchRoundAt.length >= MAX_WATCH_ROUNDS_PER_MIN) {
+        stopWatching();
+        toast('页面内容变化过于频繁，已暂停自动补译。再次点击“翻译整页”可重新开始。', 'info', 6000);
+        return;
+      }
+      pageState.watchRoundAt.push(now);
+
+      const freshMap = new Map();
+      fresh.forEach((text) => freshMap.set(text, map.get(text)));
+
+      const result = await startRequest(REQ.TRANSLATE_TEXTS, {
+        texts: fresh,
+        sourceLang: settings.sourceLang,
+        targetLang: settings.targetLang,
+      }).promise;
+      // 请求期间用户可能已恢复原文，此时不能再写回
+      if (!pageState.active) return;
+      const translations = result?.translations || [];
+      count += applyTranslations(freshMap, translations, settings.pageMode);
+      rememberTranslations(result?.targetLang, fresh, translations);
+      notifyWatchResult(count);
+    } catch {
+      /* 增量补译失败保持静默，避免反复弹错打断阅读 */
+    } finally {
+      pageState.watchInFlight = false;
+      // 本轮进行期间又攒了新变动就立刻接续，不必等下一次页面变动来触发
+      if (pageState.active && pageState.watchRoots.size > 0) scheduleWatchRound();
+    }
+  }
+
+  function notifyWatchResult(count) {
+    if (count > 0 && !pageState.watchNotified) {
+      pageState.watchNotified = true;
+      toast(`检测到新内容，已自动补译 ${count} 处，后续会持续同步。`, 'info', 4000);
+    }
   }
 
   function applyTranslations(textMap, translations, mode) {
@@ -484,11 +698,14 @@
     let translated = 0;
     for (const [source, entries] of textMap) {
       const target = translations[index++] ?? '';
-      if (!target || target.trim() === source) continue;
+      const usable = Boolean(target && target.trim() && target.trim() !== source.trim());
       for (const entry of entries) {
         const node = entry.node;
         if (!node.isConnected || !node.parentNode) continue;
+        // 不论是否真的有译文都登记：模型把某条原样返回时也要标记为已处理，
+        // 否则它每轮都会被当成新内容重新收集、反复发起请求
         if (!pageState.originals.has(node)) pageState.originals.set(node, entry.raw);
+        if (!usable) continue;
         const leading = (entry.raw.match(/^\s*/) || [''])[0];
         const trailing = (entry.raw.match(/\s*$/) || [''])[0];
         node.nodeValue = `${leading}${target}${trailing}`;
@@ -541,8 +758,12 @@
       const result = await request.promise;
       const translations = result?.translations || [];
       const count = applyTranslations(textMap, translations, settings.pageMode);
+      // 首次整页的译文一并存入翻译记忆，供后续重复文案直接复用
+      rememberTranslations(result?.targetLang, texts, translations);
       pageState.active = true;
       document.documentElement.setAttribute('data-ait-translated', '1');
+      // 首次翻译完成后再开始监听，避免把上面这批写入当成「新内容」
+      if (settings.autoTranslateDynamic !== false) startWatching();
       if (count === 0) {
         toast('没有需要翻译的内容（可能已是目标语言）。');
       } else {

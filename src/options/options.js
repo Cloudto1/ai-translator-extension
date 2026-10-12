@@ -54,6 +54,7 @@ const els = {
   summaryLength: $('summaryLength'),
   historyLimit: $('historyLimit'),
   autoTranslateSelection: $('autoTranslateSelection'),
+  autoTranslateDynamic: $('autoTranslateDynamic'),
   disableThinking: $('disableThinking'),
   // API
   apiKey: $('apiKey'),
@@ -133,6 +134,7 @@ function fillForm() {
   els.summaryLength.value = settings.summaryLength;
   els.historyLimit.value = String(settings.historyLimit);
   els.autoTranslateSelection.checked = settings.autoTranslateSelection;
+  els.autoTranslateDynamic.checked = settings.autoTranslateDynamic;
   els.disableThinking.checked = settings.disableThinking;
 
   els.apiKey.value = settings.apiKey;
@@ -448,6 +450,9 @@ function bindEvents() {
   els.historyLimit.addEventListener('change', () => persist({ historyLimit: Number(els.historyLimit.value) }));
   els.autoTranslateSelection.addEventListener('change', () =>
     persist({ autoTranslateSelection: els.autoTranslateSelection.checked }),
+  );
+  els.autoTranslateDynamic.addEventListener('change', () =>
+    persist({ autoTranslateDynamic: els.autoTranslateDynamic.checked }),
   );
   els.disableThinking.addEventListener('change', () => persist({ disableThinking: els.disableThinking.checked }));
 

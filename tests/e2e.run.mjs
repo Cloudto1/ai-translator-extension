@@ -145,6 +145,15 @@ async function readSettings() {
   return sw.evaluate(async () => (await chrome.storage.sync.get('ait_settings')).ait_settings);
 }
 
+/** 整页翻译请求会在历史里各留一条记录，用条数变化判断是否真的调用了模型。 */
+async function countPageHistory() {
+  return sw.evaluate(async () => {
+    const data = await chrome.storage.local.get('ait_history');
+    const list = Array.isArray(data?.ait_history) ? data.ait_history : [];
+    return list.filter((e) => e?.kind === 'page').length;
+  });
+}
+
 function countCJK(text) {
   return (String(text || '').match(/[\u4e00-\u9fff]/g) || []).length;
 }
@@ -317,6 +326,120 @@ async function main() {
       timeout: 20000,
     });
     await setSettings({ pageMode: 'replace' });
+  });
+
+  log('\n【2.5】持续翻译（动态内容自动补译）');
+  await step('翻译完成后新增的 DOM 内容被自动补译', async () => {
+    await setSettings({ pageMode: 'replace', autoTranslateDynamic: true });
+    await sendToTab(`${baseUrl}/en`, 'RUN_TRANSLATE_PAGE');
+    await waitFor(async () => countCJK(await page.textContent('#p1')) >= 5, {
+      label: '重新整页翻译',
+      timeout: 60000,
+    });
+
+    // 模拟 SPA 在翻译完成后异步插入的新内容
+    const t0 = Date.now();
+    await page.evaluate(() => {
+      const p = document.createElement('p');
+      p.id = 'dyn1';
+      p.textContent = 'This paragraph was added after the page had already been translated.';
+      document.querySelector('main').appendChild(p);
+    });
+
+    const text = await waitFor(
+      async () => {
+        const t = await page.textContent('#dyn1');
+        return countCJK(t) >= 5 ? t : null;
+      },
+      { label: '动态新增内容被补译', timeout: 45000 },
+    );
+    log(`  ↳ 新内容补译耗时约 ${Date.now() - t0}ms（含 400ms 轮询误差）`);
+    assert(countCJK(text) >= 5, `动态内容未翻译：${text}`);
+    // 原有段落应保持译文，不应被回滚
+    assert(countCJK(await page.textContent('#p1')) >= 5, '原有译文被破坏');
+    await page.screenshot({ path: path.join(ARTIFACTS, 'dynamic-translated.png') });
+  });
+
+  await step('重复文案命中翻译记忆，不再请求模型', async () => {
+    await page.waitForTimeout(900); // 等上一轮的历史写入落盘
+    const before = await countPageHistory();
+
+    await page.evaluate(() => {
+      const p = document.createElement('p');
+      p.id = 'memo1';
+      // 与 #p1 原文完全一致，应直接复用已有译文而不是重新请求
+      p.textContent = 'Artificial intelligence is transforming the way we work and live.';
+      document.querySelector('main').appendChild(p);
+    });
+
+    // 用细粒度轮询量出真实延迟（默认 waitFor 每 400ms 才探一次，误差过大）
+    const t0 = Date.now();
+    let text = '';
+    for (let i = 0; i < 400; i += 1) {
+      text = (await page.textContent('#memo1')) || '';
+      if (countCJK(text) >= 5) break;
+      await page.waitForTimeout(50);
+    }
+    log(`  ↳ 记忆命中耗时约 ${Date.now() - t0}ms`);
+    assert(countCJK(text) >= 5, `重复文案未翻译：${text}`);
+    assert(
+      text.trim() === (await page.textContent('#p1')).trim(),
+      '复用译文应与首次翻译一致',
+    );
+
+    const after = await countPageHistory();
+    assert(after === before, `命中翻译记忆不应产生新请求：${before} → ${after}`);
+  });
+
+  await step('隐藏内容展开后被自动补译', async () => {
+    await page.evaluate(() => {
+      const box = document.createElement('div');
+      box.id = 'collapsed';
+      box.style.display = 'none';
+      const p = document.createElement('p');
+      p.id = 'hidden1';
+      p.textContent = 'Hidden content becomes visible only after expanding this panel.';
+      box.appendChild(p);
+      document.querySelector('main').appendChild(box);
+    });
+    // 等过一个防抖周期，确认不可见内容不会被翻译
+    await page.waitForTimeout(1500);
+    assert(
+      countCJK(await page.textContent('#hidden1')) === 0,
+      `不可见内容不应被翻译：${await page.textContent('#hidden1')}`,
+    );
+
+    await page.evaluate(() => {
+      document.querySelector('#collapsed').style.display = 'block';
+    });
+
+    const text = await waitFor(
+      async () => {
+        const t = await page.textContent('#hidden1');
+        return countCJK(t) >= 5 ? t : null;
+      },
+      { label: '展开后被补译', timeout: 45000 },
+    );
+    assert(countCJK(text) >= 5, `展开内容未翻译：${text}`);
+  });
+
+  await step('恢复原文后不再继续补译', async () => {
+    await sendToTab(`${baseUrl}/en`, 'RUN_TRANSLATE_PAGE');
+    await waitFor(async () => (await page.getAttribute('html', 'data-ait-translated')) === null, {
+      label: '恢复原文',
+      timeout: 20000,
+    });
+    assert(countCJK(await page.textContent('#p1')) === 0, '原文未恢复');
+
+    await page.evaluate(() => {
+      const p = document.createElement('p');
+      p.id = 'afterRestore';
+      p.textContent = 'This content should stay untranslated after restoring the original page.';
+      document.querySelector('main').appendChild(p);
+    });
+    await page.waitForTimeout(2500);
+    const t = await page.textContent('#afterRestore');
+    assert(countCJK(t) === 0, `恢复原文后不应继续翻译：${t}`);
   });
 
   log('\n【3】划词翻译');
@@ -535,6 +658,29 @@ async function main() {
       { label: '常用语言组合', timeout: 10000 },
     );
     await optionsPage.screenshot({ path: path.join(ARTIFACTS, 'options-language.png') });
+  });
+
+  await step('管理面板可开关持续翻译', async () => {
+    await optionsPage.click('.nav-item[data-view="language"]');
+    const toggle = optionsPage.locator('#autoTranslateDynamic');
+    // 自定义样式的开关：input 被 .track 覆盖，点击需要落在包裹它的 label 上
+    const label = optionsPage.locator('label.switch:has(#autoTranslateDynamic)');
+    assert(await toggle.isVisible(), '持续翻译开关应可见');
+    assert(await toggle.isChecked(), '持续翻译默认应为开启');
+
+    await label.click();
+    await waitFor(async () => (await readSettings())?.autoTranslateDynamic === false, {
+      label: '持续翻译关闭写入 storage',
+      timeout: 10000,
+    });
+    assert(!(await toggle.isChecked()), '开关应切换到关闭');
+
+    await label.click();
+    await waitFor(async () => (await readSettings())?.autoTranslateDynamic === true, {
+      label: '持续翻译开启写入 storage',
+      timeout: 10000,
+    });
+    assert(await toggle.isChecked(), '开关应切回开启');
   });
 
   await step('管理面板可测试 API 连接', async () => {

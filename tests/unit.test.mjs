@@ -304,6 +304,11 @@ test('normalizeSettings 处理源语言与历史上限', () => {
   assert.equal(normalizeSettings({ historyLimit: 5 }).historyLimit, DEFAULT_SETTINGS.historyLimit);
   assert.equal(normalizeSettings({ historyLimit: 500 }).historyLimit, 500);
   assert.equal(normalizeSettings({ historyLimit: 99999 }).historyLimit, 2000);
+  // 持续翻译：缺省开启，显式关闭需被保留
+  assert.equal(normalizeSettings({}).autoTranslateDynamic, true);
+  assert.equal(normalizeSettings({ autoTranslateDynamic: false }).autoTranslateDynamic, false);
+  assert.equal(normalizeSettings({ autoTranslateDynamic: 'off' }).autoTranslateDynamic, false);
+  assert.equal(normalizeSettings({ autoTranslateDynamic: true }).autoTranslateDynamic, true);
 });
 
 test('normalizeUsage / mergeUsage 归一化各家用量格式', () => {
