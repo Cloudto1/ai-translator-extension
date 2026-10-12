@@ -442,6 +442,71 @@ async function main() {
     assert(countCJK(t) === 0, `恢复原文后不应继续翻译：${t}`);
   });
 
+
+  log('\n【2.7】站内连续导航（模拟"点着点着就不翻了"）');
+  await step('连续切换路由触发补译限流后，翻译不会永久失效', async () => {
+    await setSettings({ pageMode: 'replace', autoTranslateDynamic: true });
+    await sendToTab(`${baseUrl}/en`, 'RUN_TRANSLATE_PAGE');
+    await waitFor(async () => countCJK(await page.textContent('#p1')) >= 5, {
+      label: '整页翻译就绪',
+      timeout: 60000,
+    });
+
+    // 模拟 SPA 路由：整体替换主内容区并推进 history，外壳（nav）保持不变
+    const route = (i) =>
+      page.evaluate((n) => {
+        document.querySelector('main').innerHTML =
+          `<h1 id="pane-h">Panel ${n} overview</h1>` +
+          `<p id="pane-a">Release ${n} finished building and is now serving production traffic.</p>` +
+          `<p id="pane-b">Rolling back release ${n} takes a single click from this screen.</p>`;
+        history.pushState({}, '', `/panel-${n}`);
+      }, i);
+
+    const paneTranslated = async () => {
+      const texts = await page.$$eval('#pane-h, #pane-a, #pane-b', (els) => els.map((el) => el.textContent));
+      return texts.length === 3 && texts.every((t) => countCJK(t) >= 3);
+    };
+    const shellStillTranslated = async () => countCJK(await page.textContent('nav')) >= 2;
+
+    // 先跑满每分钟的补译配额（默认 20 轮），后续导航必然被限流
+    const WARMUP = 20;
+    let auto = 0;
+    for (let i = 1; i <= WARMUP; i += 1) {
+      await route(i);
+      if (await waitFor(paneTranslated, { timeout: 8000, interval: 200 }).catch(() => null)) auto += 1;
+    }
+    log(`  ↳ 配额内自动补译 ${auto}/${WARMUP} 次`);
+    assert(auto >= WARMUP - 3, `站内导航后自动补译异常，仅成功 ${auto}/${WARMUP} 次`);
+
+    // 第 21 次：配额已耗尽，自动补译被拦下；此时用户点「翻译整页」必须能补上，
+    // 而不是把已经译好的外壳恢复成原文（后者正是用户遇到的 bug）
+    await route(21);
+    const auto21 = await waitFor(paneTranslated, { timeout: 4000, interval: 200 }).catch(() => null);
+    if (auto21) {
+      log('  ↳ 第 21 次仍在配额内，未进入限流分支');
+    } else {
+      log('  ↳ 第 21 次被限流拦下，按下「翻译整页」');
+      await sendToTab(baseUrl, 'RUN_TRANSLATE_PAGE');
+      assert(
+        await waitFor(paneTranslated, { timeout: 15000, interval: 300 }).catch(() => null),
+        '被限流后按「翻译整页」仍无法补译',
+      );
+      assert(await shellStillTranslated(), '「翻译整页」把已翻译的外壳还原成了原文');
+    }
+
+    // 第 22 次：不再手动干预，验证限流只是退避、会自动恢复（旧实现会永久停表）
+    await route(22);
+    const recovered = await waitFor(paneTranslated, { timeout: 45000, interval: 500 }).catch(() => null);
+    assert(recovered, '限流退避后未能自动恢复补译（旧实现会永久停止监听）');
+    assert(await shellStillTranslated(), '恢复补译后外壳译文应保持');
+
+    await page.screenshot({ path: path.join(ARTIFACTS, 'spa-navigation.png') });
+
+    // 地址已被 history.pushState 改到 /panel-N，后面的用例依赖 /en
+    await page.goto(`${baseUrl}/en`);
+    await waitFor(async () => page.locator('#p1').isVisible(), { label: '回到测试页', timeout: 20000 });
+  });
+
   log('\n【3】划词翻译');
   await page.reload();
   await waitFor(async () => page.locator('#p2').isVisible(), { label: '页面重载' });
@@ -603,7 +668,8 @@ async function main() {
   let optionsPage;
 
   await step('打开管理面板并完成首屏渲染', async () => {
-    await sw.evaluate(() => chrome.storage.local.set({ ait_history: [] }));
+    // 翻译记录与用量统计是两份独立数据，这里都重置，让后面的面板断言从同一基线开始
+    await sw.evaluate(() => chrome.storage.local.remove(['ait_history', 'ait_stats']));
     optionsPage = await ctx.newPage();
     optionsPage.on('dialog', (dialog) => dialog.accept());
     await optionsPage.goto(`chrome-extension://${extensionId}/src/options/options.html`);

@@ -452,6 +452,9 @@
     watchRoundAt: [],
     watchInFlight: false,
     watchNotified: false,
+    watchRetryAt: 0, // 限流退避的到期时间：到点自动继续补译，而不是永久停表
+    watchThrottled: false, // 退避提示只弹一次，避免反复打扰
+    watchForceOnce: false, // 用户显式要求补译时，放行一轮（不受自动退避限制）
   };
 
   function isVisible(el) {
@@ -548,6 +551,9 @@
     }
     pageState.watchFirstAt = 0;
     pageState.watchRoots.clear();
+    pageState.watchRetryAt = 0;
+    pageState.watchThrottled = false;
+    pageState.watchForceOnce = false;
   }
 
   function onMutations(mutations) {
@@ -572,12 +578,18 @@
     if (pageState.watchRoots.size > 0) scheduleWatchRound();
   }
 
-  function scheduleWatchRound() {
+  /**
+   * @param {number} [cooldownMs] 限流退避时长。给定时不做防抖、直接等到点再跑：
+   *   否则页面持续变动会把补译无限往后推，看起来就像"不翻了"。
+   */
+  function scheduleWatchRound(cooldownMs = 0) {
     const now = Date.now();
+    if (pageState.watchRetryAt > now) cooldownMs = Math.max(cooldownMs, pageState.watchRetryAt - now);
     if (!pageState.watchFirstAt) pageState.watchFirstAt = now;
     // 防抖 + 最长等待：折叠展开动画会连续产生变动，不能被它一直往后推
     const waited = now - pageState.watchFirstAt;
-    const delay = Math.max(0, Math.min(WATCH_DEBOUNCE_MS, WATCH_MAX_WAIT_MS - waited));
+    const delay =
+      cooldownMs > 0 ? cooldownMs : Math.max(0, Math.min(WATCH_DEBOUNCE_MS, WATCH_MAX_WAIT_MS - waited));
     if (pageState.watchTimer) clearTimeout(pageState.watchTimer);
     pageState.watchTimer = setTimeout(() => {
       pageState.watchTimer = null;
@@ -601,6 +613,11 @@
 
   async function runWatchRound() {
     if (!pageState.active || pageState.watchInFlight) return;
+
+    // 用户按「翻译整页」要求补译时放行一轮：限流是给页面自发变动用的，
+    // 不该把用户的显式操作也挡在外面。
+    const force = pageState.watchForceOnce;
+    pageState.watchForceOnce = false;
 
     const roots = [...pageState.watchRoots];
     pageState.watchRoots.clear();
@@ -653,14 +670,25 @@
         return;
       }
 
-      // 限流：页面频繁变动时不应无限调用模型
+      // 限流：页面频繁变动时不应无限调用模型。
+      // 注意这里只退避、不定表——停表会让之后的站内导航彻底失去自动补译，
+      // 用户看到的就是「点着点着就不翻了」。
       const now = Date.now();
       pageState.watchRoundAt = pageState.watchRoundAt.filter((t) => now - t < 60000);
-      if (pageState.watchRoundAt.length >= MAX_WATCH_ROUNDS_PER_MIN) {
-        stopWatching();
-        toast('页面内容变化过于频繁，已暂停自动补译。再次点击“翻译整页”可重新开始。', 'info', 6000);
+      if (!force && pageState.watchRoundAt.length >= MAX_WATCH_ROUNDS_PER_MIN) {
+        // 本轮收集到的根先放回去，等最早的配额滑出窗口再接着补
+        for (const root of roots) pageState.watchRoots.add(root);
+        const waitMs = Math.max(1000, pageState.watchRoundAt[0] + 60000 - now + 100);
+        pageState.watchRetryAt = now + waitMs;
+        scheduleWatchRound(waitMs);
+        if (!pageState.watchThrottled) {
+          pageState.watchThrottled = true;
+          toast('页面内容变化较快，已放慢自动补译速度，稍后会自动继续。', 'info', 5000);
+        }
         return;
       }
+      pageState.watchRetryAt = 0;
+      pageState.watchThrottled = false;
       pageState.watchRoundAt.push(now);
 
       const freshMap = new Map();
@@ -722,12 +750,33 @@
     return translated;
   }
 
+  /**
+   * 页面上是否还有没翻过的文本。
+   * 用于区分「翻译整页」的两种意图：继续补译，还是恢复原文。
+   */
+  function hasPendingText() {
+    if (pageState.watchInFlight || pageState.watchRetryAt > Date.now()) return true;
+    return collectTextNodes(document.body).size > 0;
+  }
+
   async function translatePage() {
     if (pageState.running) {
       toast('正在翻译中，请稍候…');
       return;
     }
     if (pageState.active) {
+      // 站内导航后常常只翻了一部分（外壳译好了、新路由还没赶上），
+      // 这时用户点“翻译整页”要的是把没翻的补上，而不是把已译的恢复成原文。
+      if (hasPendingText()) {
+        // 用户显式要求补译：清掉退避并放行一轮，不让他被自动限流挡在门外
+        pageState.watchRetryAt = 0;
+        pageState.watchForceOnce = true;
+        if (!pageState.observer) startWatching();
+        if (document.body) pageState.watchRoots.add(document.body);
+        scheduleWatchRound();
+        toast('正在补译新增内容…', 'info', 2500);
+        return;
+      }
       restorePage();
       toast('已恢复原文');
       return;
