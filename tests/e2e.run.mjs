@@ -65,11 +65,13 @@ const LONG_PAGE = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Long page for page limit regression</title>
 <style>body{font:16px/1.6 system-ui,sans-serif;max-width:760px;margin:0 auto;padding:16px}p{margin:0 0 4px}</style>
 </head><body>
+<div id="content">
 ${Array.from(
   { length: LONG_ITEMS },
   (_, i) =>
     `<p id="l${i}">Paragraph number ${i + 1} describes release notes, deployment status and rollback steps of the service.</p>`,
 ).join('\n')}
+</div>
 </body></html>`;
 
 /**
@@ -234,7 +236,22 @@ function countCJK(text) {
 
 /** 超长页面里已被翻译的段落数（mock 译文含中文，据此判断落地情况）。 */
 async function countTranslatedParagraphs() {
-  return page.$$eval('body > p', (els) => els.filter((el) => /[\u4e00-\u9fff]/.test(el.textContent)).length);
+  return page.$$eval('#content > p', (els) => els.filter((el) => /[\u4e00-\u9fff]/.test(el.textContent)).length);
+}
+
+/** 读取内容脚本内部的翻译状态快照（已译记录 / 脱离节点数）。 */
+async function readTranslateState(urlPrefix = baseUrl) {
+  return sw.evaluate(async (prefix) => {
+    const tabs = await chrome.tabs.query({});
+    const tab = tabs.find((t) => (t.url || '').startsWith(prefix));
+    if (!tab) return null;
+    try {
+      const res = await chrome.tabs.sendMessage(tab.id, { type: 'GET_STATE' });
+      return res?.state || null;
+    } catch {
+      return null;
+    }
+  }, urlPrefix);
 }
 
 async function paragraphTranslated(index) {
@@ -766,6 +783,65 @@ async function main() {
       assert(later === stopped, `取消后不应继续翻译：${stopped} → ${later}`);
     } finally {
       await fetch(`${baseUrl}/mock/delay?ms=0`);
+      await setSettings(backup);
+      await page.goto(`${baseUrl}/en`);
+      await waitFor(async () => page.locator('#p1').isVisible(), { label: '回到测试页' });
+    }
+  });
+
+  log('\n【2.9】站内换页后不残留已卸载节点的记录');
+  await step('整块替换页面内容后，已译节点记录被回收（不再只增不减）', async () => {
+    const backup = await readSettings();
+    await useMockModel({ pageTranslateUnlimited: true, pageTranslateLimit: 3000 });
+    await sw.evaluate(() => chrome.storage.local.remove('ait_translation_cache'));
+    try {
+      await page.goto(`${baseUrl}/long`);
+      await waitFor(async () => page.locator('#l0').isVisible(), { label: '长页面加载', timeout: 20000 });
+      await sendToTab(`${baseUrl}/long`, 'RUN_TRANSLATE_PAGE');
+      await waitFor(
+        async () => {
+          const s = await readTranslateState(`${baseUrl}/long`);
+          return s && s.originals >= LONG_ITEMS ? s : null;
+        },
+        { label: '整页翻译完成', timeout: 240000 },
+      );
+      const before = await readTranslateState(`${baseUrl}/long`);
+      assert(before.originals >= LONG_ITEMS, `前置条件：应记录 ${LONG_ITEMS} 处已译节点，实际 ${before.originals}`);
+      assert(before.detached === 0, `翻译完成后不应有脱离节点，实际 ${before.detached}`);
+
+      // 模拟 SPA 站内换页：整块替换路由内容，旧节点被卸载且不会再回来
+      await page.evaluate(() => {
+        document.querySelector('#content').innerHTML =
+          '<p id="n0">The route changed, so the previous content was removed entirely.</p>' +
+          '<p id="n1">Only these short paragraphs should stay tracked afterwards.</p>';
+      });
+
+      // 下一次翻译轮次开工时会顺手回收这些残影
+      await sendToTab(`${baseUrl}/long`, 'RUN_TRANSLATE_PAGE');
+      const after = await waitFor(
+        async () => {
+          const s = await readTranslateState(`${baseUrl}/long`);
+          return s && s.originals <= 10 ? s : null;
+        },
+        { label: '已卸载节点被回收', timeout: 60000 },
+      );
+      assert(after.detached === 0, `回收后不应再有脱离节点，实际 ${after.detached}`);
+      // 页面仍处于「已翻译」状态（证明是回收而不是走了恢复原文那条路）
+      assert(after.active === true, '页面应仍处于已翻译状态');
+      assert((await page.getAttribute('html', 'data-ait-translated')) === '1', '页面应保持已翻译标记');
+      const n0 = (await page.textContent('#n0')) || '';
+      assert(/^【译】/.test(n0.trim()), `换页后的新内容应被翻译：${n0}`);
+      const n1 = (await page.textContent('#n1')) || '';
+      assert(/^【译】/.test(n1.trim()), `换页后的新内容应被翻译：${n1}`);
+
+      // 稳态：只留下换页后新译的两段，3200 条旧记录已被回收
+      const settled = await readTranslateState(`${baseUrl}/long`);
+      assert(
+        settled.originals > 0 && settled.originals <= 10,
+        `稳态应只剩新内容的记录，实际 ${settled.originals}`,
+      );
+      log(`  ↳ 记录数：${before.originals} → ${settled.originals}（页面只剩 2 段新内容）`);
+    } finally {
       await setSettings(backup);
       await page.goto(`${baseUrl}/en`);
       await waitFor(async () => page.locator('#p1').isVisible(), { label: '回到测试页' });

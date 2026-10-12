@@ -28,6 +28,7 @@
     RUN_TRANSLATE_PAGE: 'RUN_TRANSLATE_PAGE',
     RUN_SUMMARIZE_PAGE: 'RUN_SUMMARIZE_PAGE',
     CACHE_CLEARED: 'CACHE_CLEARED',
+    GET_STATE: 'GET_STATE',
   };
 
   // 单轮「整页翻译」最多新收集多少处文本。一轮 = 一次请求，上限是为了让每次请求有界。
@@ -538,6 +539,22 @@
     return { map, collected, hasMore };
   }
 
+  /**
+   * 清掉已经脱离文档的节点记录。
+   * SPA 站内导航会整块替换 DOM，旧节点留在 originals / inserted 里就是只增不减的
+   * 强引用，长时间站内浏览会缓慢涨内存；而这些节点既回不到页面，也不可能再被还原。
+   * 代价是：跨轮次「摘下又放回」的节点会丢掉记录（等于被当成新内容重翻一次），
+   * 这种写法在正常框架里几乎见不到，比持续涨内存划算。
+   */
+  function sweepDetachedNodes() {
+    for (const node of pageState.originals.keys()) {
+      if (!node.isConnected) pageState.originals.delete(node);
+    }
+    if (pageState.inserted.length > 0) {
+      pageState.inserted = pageState.inserted.filter((el) => el.isConnected);
+    }
+  }
+
   function restorePage() {
     // 必须先停监听：下面的还原本身会产生大量 DOM 变更，否则会被当成新内容再翻一遍
     stopWatching();
@@ -649,6 +666,9 @@
       scheduleWatchRound(500);
       return;
     }
+
+    // 每轮开工前顺手回收被页面卸载的节点记录：站内导航越频繁，这些残留越多
+    sweepDetachedNodes();
 
     const roots = [...pageState.watchRoots];
     pageState.watchRoots.clear();
@@ -852,6 +872,9 @@
 
     for (;;) {
       if (pageState.cancelRequested) break;
+
+      // 每轮开工前顺手回收被页面卸载的节点记录（站内导航留下的残留）
+      sweepDetachedNodes();
 
       const budget = Math.min(ROUND_MAX_NEW_NODES, limit - sent);
       const { map, collected, hasMore } = collectTextNodes(null, budget);
@@ -1253,6 +1276,20 @@
     const type = msg?.type;
     if (type === 'PING') {
       sendResponse({ ok: true });
+      return true;
+    }
+    // 只读的翻译状态快照，供自检 / 排障观察「已译记录是否只增不减」
+    if (type === MSG.GET_STATE) {
+      sendResponse({
+        ok: true,
+        state: {
+          active: pageState.active,
+          originals: pageState.originals.size,
+          inserted: pageState.inserted.length,
+          detached: [...pageState.originals.keys()].filter((node) => !node.isConnected).length,
+          memory: watchMemory.map.size,
+        },
+      });
       return true;
     }
     // 后台清空了持久缓存，进程内记忆也一并丢掉，否则页面里还会复用旧译文
