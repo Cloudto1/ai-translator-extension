@@ -30,7 +30,14 @@
     CACHE_CLEARED: 'CACHE_CLEARED',
   };
 
-  const MAX_TEXT_NODES = 1500;
+  // 单轮「整页翻译」最多新收集多少处文本。一轮 = 一次请求，上限是为了让每次请求有界。
+  // 额度只统计「新收集」的节点：已翻译的节点不占额度，否则扫描永远从页面顶部开始、
+  // 开头就把额度耗尽，下面的内容再点多少次也够不到（表现为「只翻译了一半」）。
+  const ROUND_MAX_NEW_NODES = 1500;
+  // 判断「页面后面还有没有未译内容」时最多多探多少个节点，避免为了一句提示遍历整页
+  const PENDING_PROBE_NODES = 3000;
+  // 单次整页翻译的处数上限兜底值（设置项 pageTranslateLimit 缺省时用）
+  const DEFAULT_PAGE_LIMIT = 3000;
   const REQUEST_TIMEOUT_MS = 180000;
 
   /* ---------------------------------------------------------------- */
@@ -340,6 +347,12 @@
       card: root.querySelector('.ait-card'),
       panel: root.querySelector('.ait-panel'),
     };
+    // 取消按钮：中断当前请求。整页翻译是分轮进行的，
+    // 会话在轮与轮之间会检查该标记，因此点一次就能停下后续轮次。
+    ui.progressCancel.onclick = () => {
+      pageState.cancelRequested = true;
+      pageState.request?.abort();
+    };
     return ui;
   }
 
@@ -455,7 +468,7 @@
     watchNotified: false,
     watchRetryAt: 0, // 限流退避的到期时间：到点自动继续补译，而不是永久停表
     watchThrottled: false, // 退避提示只弹一次，避免反复打扰
-    watchForceOnce: false, // 用户显式要求补译时，放行一轮（不受自动退避限制）
+    cancelRequested: false, // 用户点了进度条上的「取消」：分轮会话在轮间据此停下
   };
 
   function isVisible(el) {
@@ -483,9 +496,13 @@
   /**
    * 收集可翻译文本，按原文去重后返回 Map<原文, [{node, raw}]>。
    * @param {Node} [root] 限定扫描范围（增量补译用）；缺省扫描整个文档。
-   * 已翻译过的节点（记录在 pageState.originals 里）会被跳过，因此增量调用天然幂等。
+   * @param {number} [budget] 本轮最多收集多少处「新」文本。已翻译过的节点
+   *   （记录在 pageState.originals 里）会被跳过且不占额度，因此增量调用天然幂等，
+   *   也能一直往页面下方推进。
+   * @returns {{map:Map, collected:number, hasMore:boolean}} hasMore 表示额度用尽后
+   *   后面还有没翻过的文本——它是「分轮继续翻译」的依据。
    */
-  function collectTextNodes(root) {
+  function collectTextNodes(root, budget = ROUND_MAX_NEW_NODES) {
     const scope = root && root.nodeType === 1 && root.isConnected ? root : (document.body || document.documentElement);
     const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
@@ -494,18 +511,31 @@
     });
 
     const map = new Map();
-    let count = 0;
+    let collected = 0;
     let node = walker.nextNode();
-    while (node && count < MAX_TEXT_NODES) {
+    while (node && collected < budget) {
       if (!pageState.originals.has(node)) {
         const text = (node.nodeValue || '').trim();
         if (!map.has(text)) map.set(text, []);
         map.get(text).push({ node, raw: node.nodeValue });
+        collected += 1;
       }
-      count += 1;
       node = walker.nextNode();
     }
-    return map;
+
+    // 额度用尽时再往前探一段，看后面是否还有未译文本。
+    // 只探有限个节点：这里只是为了一句提示，不值得为它遍历整页。
+    let hasMore = false;
+    let probe = node;
+    for (let i = 0; probe && i < PENDING_PROBE_NODES; i += 1) {
+      if (!pageState.originals.has(probe)) {
+        hasMore = true;
+        break;
+      }
+      probe = walker.nextNode();
+    }
+
+    return { map, collected, hasMore };
   }
 
   function restorePage() {
@@ -554,7 +584,6 @@
     pageState.watchRoots.clear();
     pageState.watchRetryAt = 0;
     pageState.watchThrottled = false;
-    pageState.watchForceOnce = false;
   }
 
   function onMutations(mutations) {
@@ -614,11 +643,12 @@
 
   async function runWatchRound() {
     if (!pageState.active || pageState.watchInFlight) return;
-
-    // 用户按「翻译整页」要求补译时放行一轮：限流是给页面自发变动用的，
-    // 不该把用户的显式操作也挡在外面。
-    const force = pageState.watchForceOnce;
-    pageState.watchForceOnce = false;
+    // 整页翻译会话进行中：让位给它。我们的写入会触发监听，
+    // 若同时开一轮补译，两边会对同一批文本重复发请求。
+    if (pageState.running) {
+      scheduleWatchRound(500);
+      return;
+    }
 
     const roots = [...pageState.watchRoots];
     pageState.watchRoots.clear();
@@ -629,12 +659,14 @@
     for (let i = 0; i < roots.length; i += 1) {
       const root = roots[i];
       if (!root || !root.isConnected) continue;
-      for (const [text, entries] of collectTextNodes(root)) {
+      const { map: found, hasMore } = collectTextNodes(root);
+      for (const [text, entries] of found) {
         if (!map.has(text)) map.set(text, []);
         map.get(text).push(...entries);
       }
-      if (map.size >= MAX_WATCH_TEXTS) {
-        // 达到单轮上限：剩下的根留到下一轮，避免丢内容
+      if (hasMore || map.size >= MAX_WATCH_TEXTS) {
+        // 达到单轮上限：当前根若还有剩余、以及后面的根，都留到下一轮，避免丢内容
+        if (hasMore) pageState.watchRoots.add(root);
         for (let j = i + 1; j < roots.length; j += 1) pageState.watchRoots.add(roots[j]);
         truncated = true;
         break;
@@ -676,7 +708,7 @@
       // 用户看到的就是「点着点着就不翻了」。
       const now = Date.now();
       pageState.watchRoundAt = pageState.watchRoundAt.filter((t) => now - t < 60000);
-      if (!force && pageState.watchRoundAt.length >= MAX_WATCH_ROUNDS_PER_MIN) {
+      if (pageState.watchRoundAt.length >= MAX_WATCH_ROUNDS_PER_MIN) {
         // 本轮收集到的根先放回去，等最早的配额滑出窗口再接着补
         for (const root of roots) pageState.watchRoots.add(root);
         const waitMs = Math.max(1000, pageState.watchRoundAt[0] + 60000 - now + 100);
@@ -752,12 +784,97 @@
   }
 
   /**
-   * 页面上是否还有没翻过的文本。
-   * 用于区分「翻译整页」的两种意图：继续补译，还是恢复原文。
+   * 本次「翻译整页」的处数上限：开关打开则不设上限，翻到页面末尾为止。
    */
-  function hasPendingText() {
-    if (pageState.watchInFlight || pageState.watchRetryAt > Date.now()) return true;
-    return collectTextNodes(document.body).size > 0;
+  function resolvePageLimit(settings) {
+    if (settings?.pageTranslateUnlimited) return Infinity;
+    const limit = Number(settings?.pageTranslateLimit);
+    return Number.isFinite(limit) && limit > 0 ? Math.round(limit) : DEFAULT_PAGE_LIMIT;
+  }
+
+  /** 翻译一批已收集的文本，返回落地处数。命中翻译记忆的部分不发请求。 */
+  async function translateTextsRound(texts, textMap, settings, setProgress, round) {
+    const hitTexts = [];
+    const fresh = [];
+    for (const text of texts) {
+      if (watchMemory.map.has(text)) hitTexts.push(text);
+      else fresh.push(text);
+    }
+
+    let applied = 0;
+    if (hitTexts.length > 0) {
+      const hitMap = new Map();
+      hitTexts.forEach((text) => hitMap.set(text, textMap.get(text)));
+      applied += applyTranslations(
+        hitMap,
+        hitTexts.map((text) => watchMemory.map.get(text)),
+        settings.pageMode,
+      );
+    }
+    if (fresh.length === 0) return applied;
+
+    const freshMap = new Map();
+    fresh.forEach((text) => freshMap.set(text, textMap.get(text)));
+
+    const request = startRequest(
+      REQ.TRANSLATE_TEXTS,
+      { texts: fresh, sourceLang: settings.sourceLang, targetLang: settings.targetLang },
+      {
+        onProgress: ({ done, total }) =>
+          setProgress(done, total, round > 1 ? `第 ${round} 轮 · 正在翻译 ${done}/${total} 批…` : `正在翻译 ${done}/${total} 批…`),
+      },
+    );
+    pageState.request = request;
+    try {
+      const result = await request.promise;
+      const translations = result?.translations || [];
+      applied += applyTranslations(freshMap, translations, settings.pageMode);
+      // 译文存入翻译记忆，后续轮次与增量补译遇到重复文案可直接复用
+      rememberTranslations(result?.targetLang, fresh, translations);
+      return applied;
+    } finally {
+      if (pageState.request === request) pageState.request = null;
+    }
+  }
+
+  /**
+   * 整页翻译：分轮收集 + 分轮请求，一轮翻完接着下一轮，直到翻完或触及上限。
+   * 单轮只收集 ROUND_MAX_NEW_NODES 处新文本，保证每次请求都有界；
+   * 额度只统计新文本，所以每一轮都实实在在地往页面下方推进。
+   * @returns {Promise<{applied:number, hitLimit:boolean, limit:number}>}
+   */
+  async function runPageTranslate(settings, setProgress) {
+    const limit = resolvePageLimit(settings);
+    let applied = 0;
+    let sent = 0;
+    let round = 0;
+    let hitLimit = false;
+
+    for (;;) {
+      if (pageState.cancelRequested) break;
+
+      const budget = Math.min(ROUND_MAX_NEW_NODES, limit - sent);
+      const { map, collected, hasMore } = collectTextNodes(null, budget);
+      const texts = [...map.keys()];
+      if (texts.length === 0) break;
+
+      round += 1;
+      applied += await translateTextsRound(texts, map, settings, setProgress, round);
+      sent += collected;
+
+      // 第一轮落地后就把页面标记为「已翻译」：中途取消也能保留已译部分，
+      // 并且再次点击「翻译整页」会继续补译而不是把页面还原成原文。
+      pageState.active = true;
+      document.documentElement.setAttribute('data-ait-translated', '1');
+
+      if (!hasMore) break;
+      if (sent >= limit) {
+        hitLimit = true;
+        break;
+      }
+    }
+
+    return { applied, hitLimit, limit };
   }
 
   async function translatePage() {
@@ -765,67 +882,55 @@
       toast('正在翻译中，请稍候…');
       return;
     }
-    if (pageState.active) {
-      // 站内导航后常常只翻了一部分（外壳译好了、新路由还没赶上），
-      // 这时用户点“翻译整页”要的是把没翻的补上，而不是把已译的恢复成原文。
-      if (hasPendingText()) {
-        // 用户显式要求补译：清掉退避并放行一轮，不让他被自动限流挡在门外
-        pageState.watchRetryAt = 0;
-        pageState.watchForceOnce = true;
-        if (!pageState.observer) startWatching();
-        if (document.body) pageState.watchRoots.add(document.body);
-        scheduleWatchRound();
-        toast('正在补译新增内容…', 'info', 2500);
-        return;
-      }
-      restorePage();
-      toast('已恢复原文');
-      return;
-    }
 
     const settings = await getSettings(true);
-    const textMap = collectTextNodes();
-    const texts = [...textMap.keys()];
-    if (texts.length === 0) {
-      toast('当前页面没有找到可翻译的文本。');
-      return;
-    }
+    // 已经翻过一轮时，这次点击有两种意图：把没翻的补上，或回到原文。
+    // 用「这次到底翻到了东西没有」来区分——比事先探测「还有没有待译文本」可靠：
+    // 探测只能看有限个节点，页面越长越容易误判成「已翻完」而错手还原。
+    const wasActive = pageState.active;
 
     pageState.running = true;
-    const setProgress = showProgress(`准备翻译 ${texts.length} 段文本…`);
+    pageState.cancelRequested = false;
+    const el = createUI();
+    const setProgress = showProgress('准备翻译…');
+    el.progressCancel.hidden = false;
 
-    const request = startRequest(
-      REQ.TRANSLATE_TEXTS,
-      { texts, sourceLang: settings.sourceLang, targetLang: settings.targetLang },
-      {
-        onProgress: ({ done, total }) => setProgress(done, total, `正在翻译 ${done}/${total} 批…`),
-      },
-    );
-    pageState.request = request;
-    ui.progressCancel.hidden = false;
-
+    let applied = 0;
+    const autoTranslate = settings.autoTranslateDynamic !== false;
     try {
-      const result = await request.promise;
-      const translations = result?.translations || [];
-      const count = applyTranslations(textMap, translations, settings.pageMode);
-      // 首次整页的译文一并存入翻译记忆，供后续重复文案直接复用
-      rememberTranslations(result?.targetLang, texts, translations);
-      pageState.active = true;
-      document.documentElement.setAttribute('data-ait-translated', '1');
-      // 首次翻译完成后再开始监听，避免把上面这批写入当成「新内容」
-      if (settings.autoTranslateDynamic !== false) startWatching();
-      if (count === 0) {
+      const result = await runPageTranslate(settings, setProgress);
+      applied = result.applied;
+      const limitLabel = result.limit === Infinity ? '不设上限' : `${result.limit} 处`;
+      if (applied === 0 && wasActive) {
+        // 页面已经全部译完，这次点击就是「恢复原文」
+        restorePage();
+        toast('已恢复原文');
+      } else if (applied === 0) {
         toast('没有需要翻译的内容（可能已是目标语言）。');
+      } else if (result.hitLimit) {
+        toast(
+          `已翻译 ${applied} 处文本，达到单次上限（${limitLabel}）。页面后面还有内容，再点一次“翻译整页”即可继续；` +
+            '也可以在设置里打开「不设上限」一次翻完。',
+          'info',
+          7000,
+        );
       } else {
-        toast(`已翻译 ${count} 处文本。再次点击“翻译整页”可恢复原文。`, 'info', 4000);
+        toast(`已翻译 ${applied} 处文本。再次点击“翻译整页”可恢复原文。`, 'info', 4000);
       }
     } catch (err) {
-      if (err?.code === 'ABORTED') toast('已取消翻译');
-      else toast(err?.message || '翻译失败', 'error', 6000);
+      if (err?.code === 'ABORTED') {
+        toast(applied > 0 ? `已取消翻译（已翻译 ${applied} 处文本）` : '已取消翻译');
+      } else {
+        toast(err?.message || '翻译失败', 'error', 6000);
+      }
     } finally {
       pageState.running = false;
       pageState.request = null;
+      pageState.cancelRequested = false;
+      el.progressCancel.hidden = true;
       hideProgress();
+      // 首轮之后才开始监听：否则会把刚写入的译文当成「新内容」再翻一遍
+      if (pageState.active && autoTranslate) startWatching();
     }
   }
 

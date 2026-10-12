@@ -399,6 +399,22 @@ test('normalizeSettings 处理源语言与历史上限', () => {
   assert.equal(normalizeSettings({ cacheEnabled: 'off' }).cacheEnabled, false);
 });
 
+test('normalizeSettings 处理整页翻译上限与「不设上限」开关', () => {
+  // 默认：单次最多 3000 处，到顶后提示再点一次继续
+  assert.equal(normalizeSettings({}).pageTranslateLimit, 3000);
+  assert.equal(normalizeSettings({}).pageTranslateUnlimited, false);
+  assert.equal(normalizeSettings({ pageTranslateLimit: 500 }).pageTranslateLimit, 500);
+  // 脏数据与越界值都回落到安全值
+  assert.equal(normalizeSettings({ pageTranslateLimit: 0 }).pageTranslateLimit, 3000);
+  assert.equal(normalizeSettings({ pageTranslateLimit: -5 }).pageTranslateLimit, 3000);
+  assert.equal(normalizeSettings({ pageTranslateLimit: 'abc' }).pageTranslateLimit, 3000);
+  assert.equal(normalizeSettings({ pageTranslateLimit: 999999 }).pageTranslateLimit, 50000);
+  // 开关：缺省关闭，显式打开需被保留
+  assert.equal(normalizeSettings({ pageTranslateUnlimited: true }).pageTranslateUnlimited, true);
+  assert.equal(normalizeSettings({ pageTranslateUnlimited: 'on' }).pageTranslateUnlimited, true);
+  assert.equal(normalizeSettings({ pageTranslateUnlimited: false }).pageTranslateUnlimited, false);
+});
+
 test('normalizeUsage / mergeUsage 归一化各家用量格式', () => {
   assert.deepEqual(normalizeUsage({ prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 }), {
     prompt: 10,

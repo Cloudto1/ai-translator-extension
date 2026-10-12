@@ -56,6 +56,74 @@ const ZH_PAGE = `<!DOCTYPE html>
 <p id="z3">研究人员表示，这项技术在未来十年仍会快速进步，但他们也提醒要注意幻觉和隐私风险。</p>
 </body></html>`;
 
+/**
+ * 超长页面：每个段落一个文本节点，总数远超过单轮采集额度（1500）
+ * 与单次上限（3000），用于验证「只翻译一半」这个回归。
+ */
+const LONG_ITEMS = 3200;
+const LONG_PAGE = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Long page for page limit regression</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:760px;margin:0 auto;padding:16px}p{margin:0 0 4px}</style>
+</head><body>
+${Array.from(
+  { length: LONG_ITEMS },
+  (_, i) =>
+    `<p id="l${i}">Paragraph number ${i + 1} describes release notes, deployment status and rollback steps of the service.</p>`,
+).join('\n')}
+</body></html>`;
+
+/**
+ * 本地 mock 的 OpenAI 兼容端点：按批量提示词里的 [编号] 逐条回中文译文。
+ * 让「整页翻译」这类需要成百上千次调用的用例可以零成本、确定性地跑。
+ */
+let mockDelayMs = 0;
+
+async function handleMockApi(req, res) {
+  if (req.url?.startsWith('/mock/delay')) {
+    mockDelayMs = Number(new URL(req.url, 'http://localhost').searchParams.get('ms')) || 0;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ ok: true, mockDelayMs }));
+    return;
+  }
+
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  let body = {};
+  try {
+    body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  } catch {
+    body = {};
+  }
+  const userText = (body.messages || []).find((m) => m.role === 'user')?.content || '';
+
+  const items = [];
+  for (const line of String(userText).split('\n')) {
+    const m = line.match(/^\[(\d+)\]\s(.*)$/);
+    if (m) items[Number(m[1])] = m[2];
+  }
+  const translations = [];
+  for (let i = 0; i < items.length; i += 1) {
+    const source = items[i] ?? '';
+    translations.push(`【译】${String(source).slice(0, 40)} ${i + 1}`);
+  }
+
+  if (mockDelayMs) await new Promise((r) => setTimeout(r, mockDelayMs));
+
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.end(
+    JSON.stringify({
+      model: body.model || 'mock-model',
+      choices: [
+        {
+          message: { role: 'assistant', content: JSON.stringify(translations) },
+          finish_reason: 'stop',
+        },
+      ],
+      usage: { prompt_tokens: 120, completion_tokens: 120, total_tokens: 240 },
+    }),
+  );
+}
+
 /* ---------------------------------------------------------------- */
 
 const results = [];
@@ -164,6 +232,28 @@ function countCJK(text) {
   return (String(text || '').match(/[\u4e00-\u9fff]/g) || []).length;
 }
 
+/** 超长页面里已被翻译的段落数（mock 译文含中文，据此判断落地情况）。 */
+async function countTranslatedParagraphs() {
+  return page.$$eval('body > p', (els) => els.filter((el) => /[\u4e00-\u9fff]/.test(el.textContent)).length);
+}
+
+async function paragraphTranslated(index) {
+  return /[\u4e00-\u9fff]/.test(await page.textContent(`#l${index}`));
+}
+
+/** 切到本地 mock 模型端点，避免整页用例真的花钱。 */
+async function useMockModel(extra = {}) {
+  await setSettings({
+    apiKey: 'mock-key',
+    baseUrl: `${baseUrl}/v1`,
+    model: 'mock-model',
+    cacheEnabled: false,
+    autoTranslateDynamic: false,
+    pageMode: 'replace',
+    ...extra,
+  });
+}
+
 let sw;
 
 /* ---------------------------------------------------------------- */
@@ -173,9 +263,15 @@ async function main() {
 
   // 本地测试站点
   server = http.createServer((req, res) => {
+    // mock 模型端点：与测试站点共用一个端口，省掉额外进程
+    if (req.url?.startsWith('/v1/') || req.url?.startsWith('/mock/')) {
+      handleMockApi(req, res).catch(() => res.end('{}'));
+      return;
+    }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     if (req.url?.startsWith('/zh')) res.end(ZH_PAGE);
     else if (req.url?.startsWith('/en-repeat')) res.end(EN_REPEAT_PAGE);
+    else if (req.url?.startsWith('/long')) res.end(LONG_PAGE);
     else res.end(EN_PAGE);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -558,6 +654,124 @@ async function main() {
     await waitFor(async () => page.locator('#p1').isVisible(), { label: '回到测试页', timeout: 20000 });
   });
 
+  log('\n【2.8】整页翻译：长页面分轮推进与单次上限');
+  await step('越过旧上限（1500 处）继续翻译，达到 3000 处时提示再点继续', async () => {
+    const backup = await readSettings();
+    await sw.evaluate(() => chrome.storage.local.remove(['ait_history', 'ait_stats', 'ait_translation_cache']));
+    await useMockModel({ pageTranslateLimit: 3000, pageTranslateUnlimited: false });
+    try {
+      await page.goto(`${baseUrl}/long`);
+      await waitFor(async () => page.locator('#l0').isVisible(), { label: '长页面加载', timeout: 20000 });
+
+      await sendToTab(`${baseUrl}/long`, 'RUN_TRANSLATE_PAGE');
+      const once = await waitFor(
+        async () => {
+          const n = await countTranslatedParagraphs();
+          return n >= 3000 ? n : null;
+        },
+        { label: '单次上限内的翻译完成', timeout: 180000 },
+      );
+      assert(once >= 3000 && once <= 3010, `单次应翻译约 3000 处文本，实际 ${once}`);
+
+      // 旧实现扫满 1500 个节点就停，且再点也不会动；这里必须越过它
+      assert(await paragraphTranslated(1500), '越过第 1500 处后应继续翻译（旧实现停在 1500）');
+      assert(await paragraphTranslated(2999), '上限内的最后一段应已翻译');
+      assert(!(await paragraphTranslated(3100)), `超出上限的段落应留待下一次点击：${await page.textContent('#l3100')}`);
+
+      const toast = (await deepText('.ait-toast')) || '';
+      assert(/上限/.test(toast) && /继续/.test(toast), `应提示达到上限并可继续：${toast}`);
+      await page.screenshot({ path: path.join(ARTIFACTS, 'page-limit.png') });
+
+      // 再点一次：从断点接着翻完，而不是把已译内容恢复成原文
+      await sendToTab(`${baseUrl}/long`, 'RUN_TRANSLATE_PAGE');
+      const all = await waitFor(
+        async () => {
+          const n = await countTranslatedParagraphs();
+          return n >= LONG_ITEMS ? n : null;
+        },
+        { label: '再次点击后翻完整页', timeout: 180000 },
+      );
+      assert(all >= LONG_ITEMS, `再次点击应翻完整页，实际 ${all}/${LONG_ITEMS}`);
+      assert(await paragraphTranslated(LONG_ITEMS - 1), '最后一段应已翻译');
+      assert((await page.getAttribute('html', 'data-ait-translated')) === '1', '页面应保持已翻译状态');
+    } finally {
+      await setSettings(backup);
+      await page.goto(`${baseUrl}/en`);
+      await waitFor(async () => page.locator('#p1').isVisible(), { label: '回到测试页' });
+    }
+  });
+
+  await step('打开「不设上限」后一次点击翻完整页', async () => {
+    const backup = await readSettings();
+    await useMockModel({ pageTranslateUnlimited: true, pageTranslateLimit: 3000 });
+    try {
+      await page.goto(`${baseUrl}/long`);
+      await waitFor(async () => page.locator('#l0').isVisible(), { label: '长页面加载', timeout: 20000 });
+
+      await sendToTab(`${baseUrl}/long`, 'RUN_TRANSLATE_PAGE');
+      const all = await waitFor(
+        async () => {
+          const n = await countTranslatedParagraphs();
+          return n >= LONG_ITEMS ? n : null;
+        },
+        { label: '不设上限时一次翻完', timeout: 240000 },
+      );
+      assert(all >= LONG_ITEMS, `不设上限应一次翻完整页，实际 ${all}/${LONG_ITEMS}`);
+      assert(await paragraphTranslated(LONG_ITEMS - 1), '最后一段应已翻译');
+    } finally {
+      await setSettings(backup);
+      await page.goto(`${baseUrl}/en`);
+      await waitFor(async () => page.locator('#p1').isVisible(), { label: '回到测试页' });
+    }
+  });
+
+  await step('进度条上的「取消」能停下分轮翻译', async () => {
+    const backup = await readSettings();
+    // 让 mock 变慢，才有机会在翻译途中点取消
+    await fetch(`${baseUrl}/mock/delay?ms=500`);
+    await sw.evaluate(() => chrome.storage.local.remove('ait_translation_cache'));
+    await useMockModel({ pageTranslateUnlimited: true });
+    try {
+      await page.goto(`${baseUrl}/long`);
+      await waitFor(async () => page.locator('#l0').isVisible(), { label: '长页面加载', timeout: 20000 });
+
+      await sendToTab(`${baseUrl}/long`, 'RUN_TRANSLATE_PAGE');
+      await waitFor(async () => page.locator('.ait-progress').isVisible(), { label: '进度条出现', timeout: 15000 });
+
+      // 译文按「轮」落地：等第一轮真正落了地，再取消（此时下一轮正在请求中）
+      const landed = await waitFor(
+        async () => {
+          const n = await countTranslatedParagraphs();
+          return n >= 1000 ? n : null;
+        },
+        { label: '第一轮译文落地', timeout: 120000 },
+      );
+      await page.click('.ait-progress [data-act="cancel"]');
+
+      const toast = await waitFor(
+        async () => {
+          const t = (await deepText('.ait-toast')) || '';
+          return t.includes('已取消翻译') ? t : null;
+        },
+        { label: '取消提示', timeout: 20000 },
+      );
+      assert(toast.includes('已取消翻译'), `取消提示异常：${toast}`);
+      await waitFor(async () => page.locator('.ait-progress').isHidden(), { label: '进度条收起', timeout: 20000 });
+
+      // 取消后不应再有新译文出现（已翻译的部分保留，不再回滚）
+      const stopped = await countTranslatedParagraphs();
+      assert(stopped >= landed && stopped < LONG_ITEMS, `取消时应已翻译一部分且未翻完，实际 ${stopped}/${LONG_ITEMS}`);
+      await page.waitForTimeout(2500);
+      const later = await countTranslatedParagraphs();
+      assert(later === stopped, `取消后不应继续翻译：${stopped} → ${later}`);
+    } finally {
+      await fetch(`${baseUrl}/mock/delay?ms=0`);
+      await setSettings(backup);
+      await page.goto(`${baseUrl}/en`);
+      await waitFor(async () => page.locator('#p1').isVisible(), { label: '回到测试页' });
+    }
+  });
+
   log('\n【3】划词翻译');
   await page.reload();
   await waitFor(async () => page.locator('#p2').isVisible(), { label: '页面重载' });
@@ -829,6 +1043,49 @@ async function main() {
       },
       { label: '缓存已清空', timeout: 10000 },
     );
+  });
+
+  await step('管理面板可设置整页翻译上限与「不设上限」开关', async () => {
+    await optionsPage.click('.nav-item[data-view="language"]');
+    const limitInput = optionsPage.locator('#pageTranslateLimit');
+    const unlimited = optionsPage.locator('#pageTranslateUnlimited');
+    const label = optionsPage.locator('label.switch:has(#pageTranslateUnlimited)');
+
+    const initial = await limitInput.inputValue();
+    assert(Number(initial) === 3000, `默认上限应为 3000，实际 ${initial}`);
+    assert(!(await unlimited.isChecked()), '「不设上限」默认应关闭');
+    assert(!(await limitInput.isDisabled()), '默认状态下上限应可编辑');
+
+    await limitInput.fill('1200');
+    await limitInput.blur();
+    await waitFor(async () => (await readSettings())?.pageTranslateLimit === 1200, {
+      label: '上限写入 storage',
+      timeout: 10000,
+    });
+
+    await label.click();
+    await waitFor(async () => (await readSettings())?.pageTranslateUnlimited === true, {
+      label: '「不设上限」写入 storage',
+      timeout: 10000,
+    });
+    assert(await limitInput.isDisabled(), '打开「不设上限」后上限输入框应禁用');
+    const unlimitedHint = await optionsPage.textContent('#pageLimitHint');
+    assert(unlimitedHint.includes('关闭上限'), `提示文案异常：${unlimitedHint}`);
+
+    // 复位，避免影响后续用例
+    await label.click();
+    await waitFor(async () => (await readSettings())?.pageTranslateUnlimited === false, {
+      label: '关闭「不设上限」',
+      timeout: 10000,
+    });
+    assert(!(await limitInput.isDisabled()), '关闭「不设上限」后上限输入框应恢复可编辑');
+    await limitInput.fill('3000');
+    await limitInput.blur();
+    await waitFor(async () => (await readSettings())?.pageTranslateLimit === 3000, {
+      label: '上限复位',
+      timeout: 10000,
+    });
+    await optionsPage.screenshot({ path: path.join(ARTIFACTS, 'options-page-limit.png') });
   });
 
   await step('管理面板可测试 API 连接', async () => {

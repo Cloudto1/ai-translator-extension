@@ -18,6 +18,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   autoTranslateSelection: false, // 划词后自动翻译（无需点击按钮）
   autoTranslateDynamic: true, // 持续翻译：整页翻译激活期间，新加载 / 新展开的内容自动补译
   cacheEnabled: true, // 按站点缓存译文：同站跨页面复用，避免站内导航重复翻译与重复付费
+  pageTranslateLimit: 3000, // 单次「翻译整页」最多翻译多少处文本，达到后提示再点一次继续
+  pageTranslateUnlimited: false, // 打开后忽略上面的上限，一轮接一轮翻到页面末尾
   pageMode: 'replace', // replace（替换原文） | bilingual（双语对照）
   summaryLength: 'medium', // short | medium | detailed
   historyLimit: 300, // 本地翻译历史最多保留条数
@@ -86,6 +88,12 @@ export function normalizeSettings(raw) {
   s.autoTranslateSelection = isTruthy(s.autoTranslateSelection);
   s.autoTranslateDynamic = !isFalsy(s.autoTranslateDynamic);
   s.cacheEnabled = !isFalsy(s.cacheEnabled);
+  const pageLimit = Number(s.pageTranslateLimit);
+  s.pageTranslateLimit =
+    Number.isFinite(pageLimit) && pageLimit > 0
+      ? Math.min(Math.round(pageLimit), 50000)
+      : DEFAULT_SETTINGS.pageTranslateLimit;
+  s.pageTranslateUnlimited = isTruthy(s.pageTranslateUnlimited);
   return s;
 }
 

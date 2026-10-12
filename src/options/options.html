@@ -217,6 +217,16 @@
               <span class="track"></span>
               <span>持续翻译：新加载 / 展开的内容自动补译</span>
             </label>
+            <label class="field">
+              <span class="field-label">单次「翻译整页」上限（处文本）</span>
+              <input id="pageTranslateLimit" class="input" type="number" min="100" max="50000" step="100" />
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="pageTranslateUnlimited" />
+              <span class="track"></span>
+              <span>不设上限：一轮接一轮翻到页面末尾</span>
+            </label>
+            <p class="hint" id="pageLimitHint"></p>
             <label class="switch">
               <input type="checkbox" id="cacheEnabled" />
               <span class="track"></span>

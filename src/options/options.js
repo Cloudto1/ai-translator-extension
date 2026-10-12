@@ -60,6 +60,9 @@ const els = {
   historyLimit: $('historyLimit'),
   autoTranslateSelection: $('autoTranslateSelection'),
   autoTranslateDynamic: $('autoTranslateDynamic'),
+  pageTranslateLimit: $('pageTranslateLimit'),
+  pageTranslateUnlimited: $('pageTranslateUnlimited'),
+  pageLimitHint: $('pageLimitHint'),
   cacheEnabled: $('cacheEnabled'),
   cacheStats: $('cacheStats'),
   clearCacheBtn: $('clearCache'),
@@ -147,6 +150,8 @@ function fillForm() {
   els.historyLimit.value = String(settings.historyLimit);
   els.autoTranslateSelection.checked = settings.autoTranslateSelection;
   els.autoTranslateDynamic.checked = settings.autoTranslateDynamic;
+  els.pageTranslateLimit.value = String(settings.pageTranslateLimit);
+  els.pageTranslateUnlimited.checked = settings.pageTranslateUnlimited;
   els.cacheEnabled.checked = settings.cacheEnabled;
   els.disableThinking.checked = settings.disableThinking;
 
@@ -155,6 +160,16 @@ function fillForm() {
   els.model.value = settings.model;
 
   renderLangHint();
+  renderPageLimitHint();
+}
+
+/** 打开「不设上限」后就不再需要填数字，同时说明两种模式的行为差异。 */
+function renderPageLimitHint() {
+  const unlimited = els.pageTranslateUnlimited.checked;
+  els.pageTranslateLimit.disabled = unlimited;
+  els.pageLimitHint.textContent = unlimited
+    ? '已关闭上限：一次「翻译整页」会一轮接一轮翻到页面末尾，页面很长时请求会持续进行，可随时点进度条上的「取消」。'
+    : `一次「翻译整页」最多翻译 ${formatNumber(settings.pageTranslateLimit)} 处文本，达到上限后提示再点一次继续。`;
 }
 
 function persist(patch, { immediate = true } = {}) {
@@ -167,6 +182,8 @@ function persist(patch, { immediate = true } = {}) {
     settings = next;
     if (patch.historyLimit) await trimHistory(next.historyLimit);
     els.historyLimit.value = String(next.historyLimit);
+    els.pageTranslateLimit.value = String(next.pageTranslateLimit);
+    renderPageLimitHint();
     renderHistorySummary();
   };
 
@@ -495,6 +512,12 @@ function bindEvents() {
   );
   els.autoTranslateDynamic.addEventListener('change', () =>
     persist({ autoTranslateDynamic: els.autoTranslateDynamic.checked }),
+  );
+  els.pageTranslateLimit.addEventListener('change', () =>
+    persist({ pageTranslateLimit: Number(els.pageTranslateLimit.value) }),
+  );
+  els.pageTranslateUnlimited.addEventListener('change', () =>
+    persist({ pageTranslateUnlimited: els.pageTranslateUnlimited.checked }),
   );
   els.cacheEnabled.addEventListener('change', () => persist({ cacheEnabled: els.cacheEnabled.checked }));
   els.clearCacheBtn.addEventListener('click', async () => {
