@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI 翻译助手",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "全页面翻译、划词翻译、网页总结。兼容 OpenAI 协议，API Key 与 Base URL 由用户自行配置。",
   "minimum_chrome_version": "110",
   "icons": {
