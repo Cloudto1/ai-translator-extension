@@ -70,6 +70,7 @@ const els = {
   resetBtn: $('resetBtn'),
   testResult: $('testResult'),
   toast: $('toast'),
+  appVersion: $('appVersion'),
 };
 
 let settings = { ...DEFAULT_SETTINGS };
@@ -511,6 +512,8 @@ async function init() {
   fillForm();
   bindEvents();
   renderConnStatus();
+  // 版本号只认 manifest.json，避免面板里的硬编码数字和发布版本对不上
+  els.appVersion.textContent = chrome.runtime.getManifest().version;
 
   const initial = location.hash.slice(1);
   switchView(['dashboard', 'history', 'language', 'api'].includes(initial) ? initial : 'dashboard');
