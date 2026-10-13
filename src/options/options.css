@@ -1,22 +1,25 @@
 :root {
-  /* 品牌色：与 popup 同一套令牌（青蓝系，白字对比 5.36:1） */
-  --primary: #0e7490;
-  --primary-hover: #0b5f78;
-  --primary-soft: #0891b2;
-  --primary-weak: rgba(14, 116, 144, 0.12);
-  --primary-glow: rgba(14, 116, 144, 0.32);
+  color-scheme: dark;
+  /* 品牌色：与官网同一套（深靛灰底 + 靛蓝填充 + 浅靛蓝文字） */
+  --primary: #4856e0;
+  --primary-hover: #5a68ee;
+  --primary-fg: #a9b3ff;
+  --primary-soft: #bcc4ff;
+  --primary-weak: rgba(107, 122, 255, 0.16);
+  --primary-glow: rgba(107, 122, 255, 0.3);
   --on-primary: #ffffff;
 
-  --bg: #f8fafc;
-  --surface: #ffffff;
-  --text: #0f172a;
-  --muted: #475569;
-  --border: #e2e8f0;
-  --shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 30px rgba(15, 23, 42, 0.06);
-  --ok: #16a34a;
-  --err: #dc2626;
-  --warn: #d97706;
-  --sidebar: #ffffff;
+  --bg: #0e1016;
+  --surface: #1a1e2b;
+  --text: #ecedf3;
+  --muted: #a4a9ba;
+  --border: #2c3248;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.4);
+  --ok: #4fd08f;
+  --err: #ff8f7d;
+  --warn: #fbbf24;
+  --sidebar: #0e1016;
+
 
   /* 间距刻度 — Density 7（管理面板留白更宽） */
   --space-xs: 4px;
@@ -31,30 +34,6 @@
   --radius-sm: 10px;
   --radius-md: 12px;
   --radius-lg: 14px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14161d;
-    --surface: #1b1e27;
-    --text: #e5e7eb;
-    --muted: #9aa3b2;
-    --border: rgba(148, 163, 184, 0.22);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35);
-
-    /* 深色下改用亮青：作文字/图标对底色 7.0:1；作填充则配深色文字 6.7:1 */
-    --primary: #22b8cf;
-    --primary-hover: #3dcadd;
-    --primary-soft: #67e8f9;
-    --primary-weak: rgba(34, 184, 207, 0.16);
-    --primary-glow: rgba(34, 184, 207, 0.26);
-    --on-primary: #06232a;
-
-    --ok: #4ade80;
-    --err: #fca5a5;
-    --warn: #fbbf24;
-    --sidebar: #14161d;
-  }
 }
 
 * {
@@ -171,12 +150,12 @@ body {
 
 .nav-item:hover {
   background: var(--primary-weak);
-  color: var(--primary);
+  color: var(--primary-fg);
 }
 
 .nav-item.is-active {
   background: var(--primary-weak);
-  color: var(--primary);
+  color: var(--primary-fg);
   font-weight: 600;
 }
 
@@ -395,7 +374,7 @@ select.input:focus {
 
 .btn:hover {
   border-color: var(--primary);
-  color: var(--primary);
+  color: var(--primary-fg);
 }
 
 .btn-primary {
@@ -446,7 +425,7 @@ select.input:focus {
   width: 36px;
   height: 21px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.45);
+  background: rgba(148, 163, 184, 0.35);
   position: relative;
   flex: none;
   transition: background 0.16s ease;
@@ -486,7 +465,7 @@ select.input:focus {
 
 code {
   background: var(--primary-weak);
-  color: var(--primary);
+  color: var(--primary-fg);
   padding: 1px 5px;
   border-radius: 5px;
   font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -570,7 +549,7 @@ kbd {
 
 .chip:hover {
   border-color: var(--primary);
-  color: var(--primary);
+  color: var(--primary-fg);
 }
 
 /* ---------------- 统计 ---------------- */
@@ -744,28 +723,20 @@ kbd {
   padding: 2px 9px;
   border-radius: 999px;
   background: var(--primary-weak);
-  color: var(--primary);
+  color: var(--primary-fg);
   flex: none;
 }
 
 .tag.kind-selection {
-  background: rgba(22, 163, 74, 0.14);
-  color: #15803d;
+  background: rgba(79, 208, 143, 0.14);
+  color: #4fd08f;
 }
 
 .tag.kind-summary {
-  background: rgba(217, 119, 6, 0.16);
-  color: #b45309;
+  background: rgba(251, 191, 36, 0.14);
+  color: #fbbf24;
 }
 
-@media (prefers-color-scheme: dark) {
-  .tag.kind-selection {
-    color: #4ade80;
-  }
-  .tag.kind-summary {
-    color: #fbbf24;
-  }
-}
 
 .history-meta {
   font-size: 12px;
@@ -822,7 +793,7 @@ kbd {
   font-size: 12.5px;
   background: none;
   border: none;
-  color: var(--primary);
+  color: var(--primary-fg);
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 6px;

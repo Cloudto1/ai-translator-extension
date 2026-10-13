@@ -1,21 +1,25 @@
 :root {
-  /* 品牌色：青蓝系（由数据集 Secondary #0891B2 收敛，白字对比 5.36:1） */
-  --primary: #0e7490;
-  --primary-hover: #0b5f78;
-  --primary-soft: #0891b2;
-  --primary-weak: rgba(14, 116, 144, 0.12);
-  --primary-glow: rgba(14, 116, 144, 0.35);
+  color-scheme: dark;
+  /* 品牌色：与官网同一套（深靛灰底 + 靛蓝填充 + 浅靛蓝文字） */
+  --primary: #4856e0;
+  --primary-hover: #5a68ee;
+  --primary-fg: #a9b3ff;
+  --primary-soft: #bcc4ff;
+  --primary-weak: rgba(107, 122, 255, 0.16);
+  --primary-glow: rgba(107, 122, 255, 0.3);
   --on-primary: #ffffff;
 
-  /* 中性色（数据集 palette 原值） */
-  --bg: #f8fafc;
-  --surface: #ffffff;
-  --text: #0f172a;
-  --muted: #475569;
-  --border: #e2e8f0;
-  --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
-  --ok: #16a34a;
-  --err: #dc2626;
+  --bg: #0e1016;
+  --surface: #1a1e2b;
+  --text: #ecedf3;
+  --muted: #a4a9ba;
+  --border: #2c3248;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.4);
+  --ok: #4fd08f;
+  --err: #ff8f7d;
+  --warn: #fbbf24;
+  --sidebar: #0e1016;
+
 
   /* 间距刻度 — Density 9（弹窗紧凑） */
   --space-xs: 2px;
@@ -35,28 +39,6 @@
   --radius-sm: 9px;
   --radius-md: 12px;
   --radius-lg: 14px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14161d;
-    --surface: #1b1e27;
-    --text: #e5e7eb;
-    --muted: #9aa3b2;
-    --border: rgba(148, 163, 184, 0.22);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.4);
-
-    /* 深色下改用亮青：作文字/图标对底色 7.0:1；作填充则配深色文字 6.7:1 */
-    --primary: #22b8cf;
-    --primary-hover: #3dcadd;
-    --primary-soft: #67e8f9;
-    --primary-weak: rgba(34, 184, 207, 0.16);
-    --primary-glow: rgba(34, 184, 207, 0.28);
-    --on-primary: #06232a;
-
-    --ok: #4ade80;
-    --err: #fca5a5;
-  }
 }
 
 * {
@@ -173,7 +155,7 @@ body {
 }
 
 .tab.is-active {
-  color: var(--primary);
+  color: var(--primary-fg);
 }
 
 .tab.is-active::after {
@@ -234,7 +216,7 @@ body {
   flex: none;
   border-radius: var(--radius-sm);
   background: var(--primary-weak);
-  color: var(--primary);
+  color: var(--primary-fg);
   display: grid;
   place-items: center;
 }
@@ -341,7 +323,7 @@ button.ghost {
 }
 
 button.ghost:hover {
-  color: var(--primary);
+  color: var(--primary-fg);
   border-color: var(--primary);
 }
 
@@ -394,7 +376,7 @@ kbd {
   width: 34px;
   height: 20px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.45);
+  background: rgba(148, 163, 184, 0.35);
   position: relative;
   flex: none;
   transition: background 0.15s ease;
@@ -493,7 +475,7 @@ kbd {
 
 .opt-link:hover {
   border-color: var(--primary);
-  color: var(--primary);
+  color: var(--primary-fg);
   background: var(--primary-weak);
 }
 

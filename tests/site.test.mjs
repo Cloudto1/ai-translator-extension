@@ -209,7 +209,7 @@ test('关键色对对比度：正文 ≥ 4.5:1', async () => {
   const tok = (name) => css.match(new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`))[1];
   const pairs = [
     ['text', 'bg'], ['muted', 'bg'], ['muted', 'bg-alt'], ['muted', 'surface'],
-    ['brand', 'bg'], ['ink', 'surface'], ['ok', 'bg'], ['ok', 'surface'],
+    ['brand-fg', 'bg'], ['brand-fg', 'bg-alt'], ['ink', 'surface'], ['ok', 'bg'], ['ok', 'surface'],
     ['on-brand', 'brand'], ['on-brand', 'brand-hover'],
   ];
   for (const [fg, bg] of pairs) {

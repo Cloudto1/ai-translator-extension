@@ -192,11 +192,11 @@
       font-size: 13px;
       line-height: 1.6;
       color: #0f172a;
-      --ait-primary: #0e7490;
-      --ait-primary-weak: rgba(14, 116, 144, 0.12);
-      --ait-primary-line: rgba(14, 116, 144, 0.45);
+      --ait-primary: #3d4bd1;
+      --ait-primary-weak: rgba(61, 75, 209, 0.1);
+      --ait-primary-line: rgba(61, 75, 209, 0.45);
       --ait-on-primary: #ffffff;
-      --ait-primary-hover: #0b5f78;
+      --ait-primary-hover: #2f3bb0;
       --ait-border: #e2e8f0;
       --ait-surface: #ffffff;
       --ait-muted: #475569;
@@ -206,11 +206,11 @@
     @media (prefers-color-scheme: dark) {
       .ait-root {
         color: #e5e7eb;
-        --ait-primary: #22b8cf;
-        --ait-primary-weak: rgba(34, 184, 207, 0.16);
-        --ait-primary-line: rgba(34, 184, 207, 0.45);
-        --ait-on-primary: #06232a;
-        --ait-primary-hover: #3dcadd;
+        --ait-primary: #9aa6ff;
+        --ait-primary-weak: rgba(107, 122, 255, 0.18);
+        --ait-primary-line: rgba(154, 166, 255, 0.5);
+        --ait-on-primary: #0b0f2e;
+        --ait-primary-hover: #b4bdff;
         --ait-border: rgba(148, 163, 184, 0.24);
         --ait-surface: #1b1e27;
         --ait-muted: #9aa3b2;
