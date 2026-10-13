@@ -3,7 +3,7 @@
  * 同时可用于浏览器（Service Worker / 页面）与 Node 环境（测试）。
  */
 
-import { normalizeBaseUrl } from './config.js';
+import { normalizeBaseUrl, checkBaseUrl } from './config.js';
 
 export class ApiError extends Error {
   constructor(message, code = 'API_ERROR', details = null) {
@@ -60,29 +60,33 @@ export function mergeUsage(a, b) {
   };
 }
 
-function mergeSignals(signals) {
-  const valid = signals.filter(Boolean);
-  if (valid.length === 0) return undefined;
-  if (valid.length === 1) return valid[0];
+/**
+ * 把多个 AbortSignal 合并成一个。
+ * 返回 dispose：请求结束后必须调用，否则监听器会一直挂在长寿命的外部 signal 上。
+ */
+function linkSignals(signals) {
   const controller = new AbortController();
-  const onAbort = () => controller.abort();
-  for (const s of valid) {
+  const cleanups = [];
+  for (const s of signals) {
+    if (!s) continue;
     if (s.aborted) {
       controller.abort();
       break;
     }
+    const onAbort = () => controller.abort();
     s.addEventListener('abort', onAbort, { once: true });
+    cleanups.push(() => s.removeEventListener('abort', onAbort));
   }
-  return controller.signal;
+  return { signal: controller.signal, dispose: () => cleanups.forEach((fn) => fn()) };
 }
 
-function buildBody({ model, messages, temperature, maxTokens, stream, disableThinking, includeUsage }) {
+function buildBody({ model, messages, temperature, maxTokens, tokenParam, stream, disableThinking, includeUsage }) {
   const body = {
     model,
     messages,
     stream: !!stream,
-    max_tokens: maxTokens,
   };
+  if (typeof maxTokens === 'number') body[tokenParam] = maxTokens;
   if (typeof temperature === 'number') body.temperature = temperature;
   if (disableThinking) body.thinking = { type: 'disabled' };
   // 流式响应默认不带用量，显式要求服务端在最后一个分片里返回
@@ -90,15 +94,53 @@ function buildBody({ model, messages, temperature, maxTokens, stream, disableThi
   return body;
 }
 
-/** 是否属于「不认识的参数」类错误（用于自动降级重试）。 */
-function isUnsupportedParamError(status, text) {
+/**
+ * 是否属于「不认识的参数」类错误（用于自动降级重试）。
+ * 只有请求体里真的带了该参数才算数：否则一个无关的 400 里碰巧出现 "thinking"
+ * 字样，就会被误判成参数问题，白白重发一次相同的请求。
+ */
+export function isUnsupportedParamError(status, text, body = {}) {
   if (status !== 400 && status !== 422) return null;
   const lower = String(text || '').toLowerCase();
-  if (lower.includes('thinking')) return 'thinking';
-  if (lower.includes('stream_options')) return 'stream_options';
-  if (lower.includes('temperature')) return 'temperature';
-  if (lower.includes('max_tokens') || lower.includes('max tokens')) return 'max_tokens';
+  if (body.thinking !== undefined && lower.includes('thinking')) return 'thinking';
+  if (body.stream_options !== undefined && lower.includes('stream_options')) return 'stream_options';
+  if (body.temperature !== undefined && lower.includes('temperature')) return 'temperature';
+  if (body.max_tokens !== undefined) {
+    // o 系列等模型只认 max_completion_tokens：换名字，而不是删掉上限
+    if (lower.includes('max_completion_tokens')) return 'max_completion_tokens';
+    if (lower.includes('max_tokens') || lower.includes('max tokens')) return 'max_tokens';
+  }
   return null;
+}
+
+/** 可重试的瞬时错误：限流与网关类 5xx。 */
+const TRANSIENT_STATUS = new Set([429, 502, 503, 504]);
+const MAX_TRANSIENT_RETRIES = 2;
+const MAX_PARAM_DOWNGRADES = 4;
+
+/** 退避时长：优先听服务端的 Retry-After（秒），上限 8 秒；否则 0.8s、1.6s 指数退避。 */
+export function retryDelayMs(retryAfterHeader, attempt) {
+  const seconds = Number(retryAfterHeader);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds * 1000, 8000);
+  return 800 * 2 ** attempt;
+}
+
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new ApiError('已取消。', 'ABORTED'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new ApiError('已取消。', 'ABORTED'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 /**
@@ -137,26 +179,41 @@ export async function chatCompletion(opts) {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new ApiError('请求内容为空。', 'EMPTY_MESSAGES');
   }
+  // 库层也要把关：不依赖调用方是否先跑过 validateSettings，避免把 Key 发往明文公网地址
+  const urlError = checkBaseUrl(baseUrl || 'https://api.deepseek.com');
+  if (urlError) throw new ApiError(urlError, 'BAD_BASE_URL');
 
   const endpoint = normalizeBaseUrl(baseUrl);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
-  const mergedSignal = mergeSignals([signal, controller.signal]);
+  const timeoutController = new AbortController();
+  const timeout = setTimeout(() => timeoutController.abort(), timeoutMs);
+  const linked = linkSignals([signal, timeoutController.signal]);
+  const mergedSignal = linked.signal;
 
-  let retry = { ...opts, messages };
-  let lastError = null;
+  /** 把读取响应过程中抛出的任意错误归类成 ApiError。 */
+  const timedOut = () => !signal?.aborted && timeoutController.signal.aborted;
+  const classify = (err) => {
+    if (signal?.aborted) return new ApiError('已取消。', 'ABORTED');
+    if (timedOut()) return new ApiError('请求超时，请检查网络或 Base URL 是否可达。', 'TIMEOUT');
+    if (err instanceof ApiError) return err;
+    return new ApiError(`网络请求失败：${err?.message || err}`, 'NETWORK_ERROR');
+  };
+
+  // 随降级过程逐步收窄的请求参数
+  const state = {
+    model,
+    messages,
+    temperature,
+    maxTokens,
+    tokenParam: 'max_tokens',
+    disableThinking,
+    includeUsage,
+  };
+  let downgrades = 0;
+  let transientRetries = 0;
 
   try {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const body = buildBody({
-        model: retry.model,
-        messages: retry.messages,
-        temperature: retry.temperature,
-        maxTokens: retry.maxTokens ?? maxTokens,
-        stream,
-        disableThinking: retry.disableThinking,
-        includeUsage: retry.includeUsage ?? includeUsage,
-      });
+    for (;;) {
+      const body = buildBody({ ...state, stream });
 
       let res;
       try {
@@ -170,57 +227,100 @@ export async function chatCompletion(opts) {
           signal: mergedSignal,
         });
       } catch (err) {
-        if (signal?.aborted) throw new ApiError('已取消。', 'ABORTED');
-        if (controller.signal.aborted) {
-          throw new ApiError('请求超时，请检查网络或 Base URL 是否可达。', 'TIMEOUT');
-        }
-        throw new ApiError(`网络请求失败：${err?.message || err}`, 'NETWORK_ERROR');
+        throw classify(err);
       }
 
       if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        const unsupported = isUnsupportedParamError(res.status, text);
-        if (unsupported && attempt < 2) {
-          // 部分第三方网关不支持这些参数，去掉后重试
-          if (unsupported === 'thinking') retry.disableThinking = false;
-          else if (unsupported === 'stream_options') retry.includeUsage = false;
-          else if (unsupported === 'temperature') retry.temperature = undefined;
-          else if (unsupported === 'max_tokens') retry.maxTokens = undefined;
-          lastError = new ApiError(describeHttpError(res.status, text), `HTTP_${res.status}`);
+        let text = '';
+        try {
+          text = await res.text();
+        } catch (err) {
+          // 读错误响应体失败不影响错误上报，除非是被取消 / 超时打断
+          if (signal?.aborted || timedOut()) throw classify(err);
+        }
+
+        const unsupported = isUnsupportedParamError(res.status, text, body);
+        if (unsupported && downgrades < MAX_PARAM_DOWNGRADES) {
+          // 部分第三方网关不支持这些参数，去掉（或换名）后重试
+          downgrades += 1;
+          if (unsupported === 'thinking') state.disableThinking = false;
+          else if (unsupported === 'stream_options') state.includeUsage = false;
+          else if (unsupported === 'temperature') state.temperature = undefined;
+          else if (unsupported === 'max_completion_tokens') state.tokenParam = 'max_completion_tokens';
+          else if (unsupported === 'max_tokens') state.maxTokens = undefined;
           continue;
         }
+
+        if (TRANSIENT_STATUS.has(res.status) && transientRetries < MAX_TRANSIENT_RETRIES) {
+          const wait = retryDelayMs(res.headers.get('retry-after'), transientRetries);
+          transientRetries += 1;
+          await sleep(wait, mergedSignal).catch((err) => {
+            throw classify(err);
+          });
+          continue;
+        }
+
         throw new ApiError(describeHttpError(res.status, text), `HTTP_${res.status}`, text);
       }
 
-      const contentType = res.headers.get('content-type') || '';
-      // 网关忽略了 stream，直接返回了 JSON
-      if (stream && contentType.includes('application/json')) {
-        const data = await res.json();
-        const message = data?.choices?.[0]?.message || {};
-        const content = message.content || '';
-        if (content && onDelta) onDelta(content, content);
-        return finalize(content, message.reasoning_content || '', data);
-      }
+      try {
+        const contentType = res.headers.get('content-type') || '';
 
-      if (!stream) {
-        const data = await res.json();
-        const choice = data?.choices?.[0];
-        const message = choice?.message || {};
-        return finalize(
-          message.content || '',
-          message.reasoning_content || '',
-          data,
-          choice?.finish_reason ?? null,
-        );
-      }
+        // 网关忽略了 stream，直接返回了 JSON
+        if (stream && contentType.includes('application/json')) {
+          const data = await readJson(res);
+          const message = data?.choices?.[0]?.message || {};
+          const content = message.content || '';
+          if (content && onDelta) onDelta(content, content);
+          return finalize(content, message.reasoning_content || '', data);
+        }
 
-      return await readStream(res, onDelta, signal);
+        if (!stream) {
+          const data = await readJson(res);
+          const choice = data?.choices?.[0];
+          const message = choice?.message || {};
+          return finalize(
+            message.content || '',
+            message.reasoning_content || '',
+            data,
+            choice?.finish_reason ?? null,
+          );
+        }
+
+        return await readStream(res, onDelta, signal);
+      } catch (err) {
+        throw classify(err);
+      }
     }
   } finally {
     clearTimeout(timeout);
+    linked.dispose();
   }
+}
 
-  throw lastError || new ApiError('请求失败。', 'API_ERROR');
+/**
+ * 读取并解析 JSON 响应体。
+ * 有些网关（或填错的 Base URL）会在 HTTP 200 下返回 HTML 页面，
+ * 直接 res.json() 会冒出一句看不懂的 "Unexpected token <"，这里换成可操作的提示。
+ */
+async function readJson(res) {
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new ApiError(
+      '接口返回的不是有效的 JSON，请检查 Base URL 是否指向 OpenAI 兼容接口。',
+      'BAD_RESPONSE',
+      String(text).slice(0, 200),
+    );
+  }
+  // 部分网关会用 HTTP 200 包一个 error 对象
+  if (data?.error && !data.choices) {
+    const detail = typeof data.error === 'string' ? data.error : data.error.message || JSON.stringify(data.error);
+    throw new ApiError(`接口返回错误：${String(detail).slice(0, 400)}`, 'API_ERROR', text);
+  }
+  return data;
 }
 
 function finalize(content, reasoning, data, finishReason) {
@@ -241,41 +341,56 @@ async function readStream(res, onDelta, signal) {
   let reasoning = '';
   let usage = null;
   let finishReason = null;
+  let model = '';
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith(':')) continue;
-      if (!line.startsWith('data:')) continue;
-      const payload = line.slice(5).trim();
-      if (!payload || payload === '[DONE]') continue;
-      let json;
-      try {
-        json = JSON.parse(payload);
-      } catch {
-        continue;
-      }
-      if (json.usage) usage = json.usage;
-      const choice = json.choices?.[0];
-      const delta = choice?.delta;
-      if (choice?.finish_reason) finishReason = choice.finish_reason;
-      if (!delta) continue;
-      if (delta.reasoning_content) reasoning += delta.reasoning_content;
-      if (delta.content) {
-        content += delta.content;
-        if (onDelta) onDelta(delta.content, content);
-      }
+  const handleLine = (rawLine) => {
+    const line = rawLine.trim();
+    if (!line || line.startsWith(':') || !line.startsWith('data:')) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    let json;
+    try {
+      json = JSON.parse(payload);
+    } catch {
+      return;
     }
-    if (signal?.aborted) break;
+    // 流中途出错：有些网关会在数据流里塞一个 error 对象，而不是改 HTTP 状态码
+    if (json.error && !json.choices) {
+      throw new ApiError(json.error.message || '流式响应中断', 'STREAM_ERROR');
+    }
+    if (json.usage) usage = json.usage;
+    if (json.model) model = json.model;
+    const choice = json.choices?.[0];
+    if (choice?.finish_reason) finishReason = choice.finish_reason;
+    const delta = choice?.delta;
+    if (!delta) return;
+    if (delta.reasoning_content) reasoning += delta.reasoning_content;
+    if (delta.content) {
+      content += delta.content;
+      if (onDelta) onDelta(delta.content, content);
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) handleLine(line);
+      if (signal?.aborted) break;
+    }
+    // 收尾：最后一行没有换行结尾时也要处理（用量往往就在最后一个分片里）
+    buffer += decoder.decode();
+    if (buffer && !signal?.aborted) handleLine(buffer);
+  } finally {
+    // 提前退出（取消 / 出错）时释放底层连接，别让它悬着继续收数据
+    reader.cancel().catch(() => {});
   }
 
   if (signal?.aborted) throw new ApiError('已取消。', 'ABORTED');
-  return { content, reasoning, finishReason, usage, model: '' };
+  return { content, reasoning, finishReason, usage, model };
 }
 
 /** 调用 /models 接口做连通性测试。 */

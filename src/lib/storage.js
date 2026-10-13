@@ -200,21 +200,41 @@ export async function loadCache() {
   }
 }
 
+// 缓存写入同样要串行化：多个标签页的翻译请求会并发落缓存，
+// 各自「先读后写」会互相覆盖，后写的把先写的整批丢掉。
+let cacheQueue = Promise.resolve();
+
+/**
+ * 读-改-写一次缓存。mutator 拿到的是写入时刻的最新缓存，返回要落盘的新数组。
+ * 不抛错：缓存写失败只影响命中率，不该打断翻译。
+ */
+export function updateCache(mutator) {
+  cacheQueue = cacheQueue
+    .then(async () => {
+      const current = await loadCache();
+      const next = mutator(current);
+      if (Array.isArray(next)) await chrome.storage.local.set({ [CACHE_KEY]: next });
+      return next;
+    })
+    .catch((err) => {
+      console.warn('[AI翻译] 写入翻译缓存失败：', err);
+      return [];
+    });
+  return cacheQueue;
+}
+
 export async function saveCache(entries) {
   const list = Array.isArray(entries) ? entries : [];
-  try {
-    await chrome.storage.local.set({ [CACHE_KEY]: list });
-  } catch (err) {
-    console.warn('[AI翻译] 写入翻译缓存失败：', err);
-  }
+  await updateCache(() => list);
   return list;
 }
 
-export async function clearCache() {
-  try {
-    await chrome.storage.local.remove(CACHE_KEY);
-  } catch (err) {
-    console.warn('[AI翻译] 清空翻译缓存失败：', err);
-  }
-  return [];
+export function clearCache() {
+  cacheQueue = cacheQueue
+    .then(() => chrome.storage.local.remove(CACHE_KEY))
+    .catch((err) => {
+      console.warn('[AI翻译] 清空翻译缓存失败：', err);
+    })
+    .then(() => []);
+  return cacheQueue;
 }

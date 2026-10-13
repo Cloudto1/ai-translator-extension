@@ -74,7 +74,14 @@ function isTruthy(value) {
 
 /** 合并用户设置与默认值，并把类型纠正到安全范围。 */
 export function normalizeSettings(raw) {
-  const s = { ...DEFAULT_SETTINGS, ...(raw || {}) };
+  // 只认已知字段：消息和存储里的数据不可信，未知键一律丢弃，
+  // 否则任何人塞进来的键都会被原样写进 storage.sync（有配额，也会跟着账号同步）
+  const s = { ...DEFAULT_SETTINGS };
+  if (raw && typeof raw === 'object') {
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      if (raw[key] !== undefined) s[key] = raw[key];
+    }
+  }
   s.apiKey = String(s.apiKey || '').trim();
   s.baseUrl = String(s.baseUrl || '').trim() || DEFAULT_SETTINGS.baseUrl;
   s.model = String(s.model || '').trim() || DEFAULT_SETTINGS.model;
@@ -115,12 +122,58 @@ export function maskKey(key) {
   return `${k.slice(0, 6)}****${k.slice(-4)}`;
 }
 
+/**
+ * 主机名是否属于「本机 / 局域网」：这类地址走明文 http 不会经过公网，允许使用。
+ * 覆盖 localhost、回环、RFC1918 私网、链路本地与 .local 域名。
+ */
+export function isPrivateHost(hostname) {
+  const host = String(hostname || '')
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '');
+  if (!host) return false;
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
+  if (host === '::1') return true;
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  if ([m[1], m[2], m[3], m[4]].some((p) => Number(p) > 255)) return false;
+  return (
+    a === 127 ||
+    a === 10 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 169 && b === 254)
+  );
+}
+
+/**
+ * 校验 Base URL，返回错误信息（合法时返回空串）。
+ * 除了协议必须是 http(s) 之外，还拒绝「公网地址 + 明文 http」：
+ * API Key 会放在 Authorization 头里，明文传输等于把密钥广播给沿途所有网络设备。
+ */
+export function checkBaseUrl(baseUrl) {
+  const raw = String(baseUrl || '').trim();
+  if (!/^https?:\/\//i.test(raw)) return 'Base URL 需要以 http:// 或 https:// 开头';
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return 'Base URL 格式不正确';
+  }
+  if (!url.hostname) return 'Base URL 格式不正确';
+  if (url.protocol === 'http:' && !isPrivateHost(url.hostname)) {
+    return 'Base URL 使用明文 http:// 会泄露 API Key，请改用 https://（仅本机或局域网地址允许 http）';
+  }
+  return '';
+}
+
 /** 校验设置完整度，返回错误信息数组。 */
 export function validateSettings(raw) {
   const s = normalizeSettings(raw);
   const errors = [];
   if (!s.apiKey) errors.push('请填写 API Key');
   if (!s.model) errors.push('请填写模型名称');
-  if (!/^https?:\/\//i.test(s.baseUrl)) errors.push('Base URL 需要以 http:// 或 https:// 开头');
+  const urlError = checkBaseUrl(s.baseUrl);
+  if (urlError) errors.push(urlError);
   return errors;
 }

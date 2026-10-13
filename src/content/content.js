@@ -27,6 +27,7 @@
     CMD_TRANSLATE_SELECTION: 'CMD_TRANSLATE_SELECTION',
     RUN_TRANSLATE_PAGE: 'RUN_TRANSLATE_PAGE',
     RUN_SUMMARIZE_PAGE: 'RUN_SUMMARIZE_PAGE',
+    RUN_TRANSLATE_SELECTION: 'RUN_TRANSLATE_SELECTION',
     CACHE_CLEARED: 'CACHE_CLEARED',
     GET_STATE: 'GET_STATE',
   };
@@ -39,6 +40,8 @@
   const PENDING_PROBE_NODES = 3000;
   // 单次整页翻译的处数上限兜底值（设置项 pageTranslateLimit 缺省时用）
   const DEFAULT_PAGE_LIMIT = 3000;
+  // 「无响应」超时：只要后台还在回传进度 / 流式片段就会续期，所以它衡量的是「多久没动静」，
+  // 而不是整次请求的总时长——一轮整页翻译有十几批要跑，总时长很容易超过任何固定值。
   const REQUEST_TIMEOUT_MS = 180000;
 
   /* ---------------------------------------------------------------- */
@@ -56,8 +59,10 @@
       const entry = pending.get(msg?.id);
       if (!entry) return;
       if (msg.type === 'PROGRESS') {
+        entry.arm();
         entry.handlers?.onProgress?.(msg.data);
       } else if (msg.type === EVT.DELTA) {
+        entry.arm();
         entry.handlers?.onDelta?.(msg.data);
       } else if (msg.type === EVT.RESULT) {
         pending.delete(msg.id);
@@ -88,19 +93,35 @@
     // 附带页面信息，供后台写入翻译历史
     if (!body.meta) body.meta = { url: location.href, title: document.title };
     const promise = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pending.delete(id);
-        const err = new Error('请求超时，请检查网络或 API 配置。');
-        err.code = 'TIMEOUT';
-        reject(err);
-      }, REQUEST_TIMEOUT_MS);
-      pending.set(id, { resolve, reject, handlers, timer });
+      const entry = { resolve, reject, handlers, timer: null, arm: null };
+      entry.arm = () => {
+        clearTimeout(entry.timer);
+        entry.timer = setTimeout(() => {
+          pending.delete(id);
+          // 后台那边可能还在跑：不通知它停下，模型会继续消耗 Token，结果却再也没人接收
+          try {
+            ensurePort().postMessage({ id: `abort-${id}`, type: REQ.ABORT, payload: { targetId: id } });
+          } catch {
+            /* 端口已断开，后台随之会中止 */
+          }
+          const err = new Error('请求超时，请检查网络或 API 配置。');
+          err.code = 'TIMEOUT';
+          reject(err);
+        }, REQUEST_TIMEOUT_MS);
+      };
+      pending.set(id, entry);
+      entry.arm();
       try {
         ensurePort().postMessage({ id, type, payload: body });
       } catch (err) {
         pending.delete(id);
-        clearTimeout(timer);
-        reject(err);
+        clearTimeout(entry.timer);
+        // 扩展被重载 / 更新后，页面里残留的旧脚本再也连不上后台
+        reject(
+          /context invalidated/i.test(err?.message || '')
+            ? new Error('扩展已更新或被重新加载，请刷新当前页面后重试。')
+            : err,
+        );
       }
     });
     return {
@@ -453,6 +474,7 @@
   const WATCH_MAX_WAIT_MS = 600; // 展开动画会持续产生变动，最多只压这么久就必须开翻
   const MAX_WATCH_TEXTS = 400; // 单轮补译的文本条数上限
   const MAX_WATCH_ROUNDS_PER_MIN = 20; // 每分钟最多补译轮次，防止页面持续变动导致无限调用
+  const MAX_MEMORY_ENTRIES = 4000; // 会话内翻译记忆的条数上限（超出按最久未用淘汰）
 
   const pageState = {
     running: false,
@@ -653,9 +675,14 @@
     sources.forEach((src, i) => {
       const dst = translations[i];
       if (dst && String(dst).trim() && String(dst).trim() !== String(src).trim()) {
+        watchMemory.map.delete(src); // 先删再写：Map 保序，重复出现的文案会被挪到最新
         watchMemory.map.set(src, dst);
       }
     });
+    // 长时间浏览（尤其 SPA）会不断积累不同文案，不设上限就是缓慢泄漏；淘汰最久未用的
+    while (watchMemory.map.size > MAX_MEMORY_ENTRIES) {
+      watchMemory.map.delete(watchMemory.map.keys().next().value);
+    }
   }
 
   async function runWatchRound() {
@@ -861,17 +888,22 @@
    * 整页翻译：分轮收集 + 分轮请求，一轮翻完接着下一轮，直到翻完或触及上限。
    * 单轮只收集 ROUND_MAX_NEW_NODES 处新文本，保证每次请求都有界；
    * 额度只统计新文本，所以每一轮都实实在在地往页面下方推进。
-   * @returns {Promise<{applied:number, hitLimit:boolean, limit:number}>}
+   * @param {{applied:number}} tally 累计落地处数。由调用方持有、在每轮后就地累加：
+   *   中途取消 / 报错会让本函数抛出，若只靠返回值，前几轮已经落地的处数就丢了。
+   * @returns {Promise<{applied:number, hitLimit:boolean, limit:number, cancelled:boolean}>}
    */
-  async function runPageTranslate(settings, setProgress) {
+  async function runPageTranslate(settings, setProgress, tally = { applied: 0 }) {
     const limit = resolvePageLimit(settings);
-    let applied = 0;
     let sent = 0;
     let round = 0;
     let hitLimit = false;
+    let cancelled = false;
 
     for (;;) {
-      if (pageState.cancelRequested) break;
+      if (pageState.cancelRequested) {
+        cancelled = true;
+        break;
+      }
 
       // 每轮开工前顺手回收被页面卸载的节点记录（站内导航留下的残留）
       sweepDetachedNodes();
@@ -882,7 +914,7 @@
       if (texts.length === 0) break;
 
       round += 1;
-      applied += await translateTextsRound(texts, map, settings, setProgress, round);
+      tally.applied += await translateTextsRound(texts, map, settings, setProgress, round);
       sent += collected;
 
       // 第一轮落地后就把页面标记为「已翻译」：中途取消也能保留已译部分，
@@ -897,7 +929,7 @@
       }
     }
 
-    return { applied, hitLimit, limit };
+    return { applied: tally.applied, hitLimit, limit, cancelled };
   }
 
   async function translatePage() {
@@ -918,13 +950,17 @@
     const setProgress = showProgress('准备翻译…');
     el.progressCancel.hidden = false;
 
-    let applied = 0;
+    const tally = { applied: 0 };
     const autoTranslate = settings.autoTranslateDynamic !== false;
     try {
-      const result = await runPageTranslate(settings, setProgress);
-      applied = result.applied;
+      const result = await runPageTranslate(settings, setProgress, tally);
+      const applied = result.applied;
       const limitLabel = result.limit === Infinity ? '不设上限' : `${result.limit} 处`;
-      if (applied === 0 && wasActive) {
+      if (result.cancelled) {
+        // 用户主动取消：不能落到下面的「applied === 0 就还原」分支，
+        // 否则在已译页面上点「取消」会把整页错手还原成原文
+        toast(applied > 0 ? `已取消翻译（已翻译 ${applied} 处文本）` : '已取消翻译');
+      } else if (applied === 0 && wasActive) {
         // 页面已经全部译完，这次点击就是「恢复原文」
         restorePage();
         toast('已恢复原文');
@@ -942,7 +978,7 @@
       }
     } catch (err) {
       if (err?.code === 'ABORTED') {
-        toast(applied > 0 ? `已取消翻译（已翻译 ${applied} 处文本）` : '已取消翻译');
+        toast(tally.applied > 0 ? `已取消翻译（已翻译 ${tally.applied} 处文本）` : '已取消翻译');
       } else {
         toast(err?.message || '翻译失败', 'error', 6000);
       }
@@ -962,7 +998,6 @@
   /* ---------------------------------------------------------------- */
 
   let selectionRequest = null;
-  let lastSelection = { text: '', rect: null };
 
   function hideSelectionButton() {
     if (ui) ui.selbtn.hidden = true;
@@ -1108,7 +1143,6 @@
         return;
       }
       const clipped = text.slice(0, 6000);
-      lastSelection = { text: clipped, rect };
       const settings = await getSettings();
       if (settings.autoTranslateSelection) {
         openSelectionCard(rect, clipped, { autoStarted: true, settings });
@@ -1308,7 +1342,8 @@
       sendResponse({ ok: true });
       return true;
     }
-    if (type === MSG.CMD_TRANSLATE_SELECTION) {
+    // 右键菜单 / 快捷键发的是 CMD_*，弹窗按钮发的是 RUN_*，两条入口行为一致
+    if (type === MSG.CMD_TRANSLATE_SELECTION || type === MSG.RUN_TRANSLATE_SELECTION) {
       const text = (msg.text || window.getSelection()?.toString() || '').trim();
       if (!text) {
         toast('请先选中要翻译的文本。');

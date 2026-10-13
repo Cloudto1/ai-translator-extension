@@ -265,6 +265,13 @@ export async function translateTexts(settings, texts, opts = {}) {
   const concurrency = Math.max(1, Math.min(limits.concurrency || 3, batches.length));
   let firstError = null;
 
+  // 内部中止开关：任何一批失败后整次翻译注定作废，其余在途批次继续跑只会白烧 Token。
+  // 外部 signal（用户取消）会联动到它，所以对外语义不变。
+  const abortAll = new AbortController();
+  const onExternalAbort = () => abortAll.abort();
+  if (signal?.aborted) abortAll.abort();
+  else signal?.addEventListener('abort', onExternalAbort, { once: true });
+
   const worker = async () => {
     for (;;) {
       const batchIndex = cursor;
@@ -274,7 +281,7 @@ export async function translateTexts(settings, texts, opts = {}) {
       const indices = batches[batchIndex];
       const payload = indices.map((i) => list[i]);
       try {
-        const out = await translateBatch(settings, payload, lang, signal, pair.sourceLang);
+        const out = await translateBatch(settings, payload, lang, abortAll.signal, pair.sourceLang);
         requestCount += 1;
         usage = mergeUsage(usage, out.usage);
         indices.forEach((globalIndex, k) => {
@@ -283,7 +290,11 @@ export async function translateTexts(settings, texts, opts = {}) {
         done += 1;
         onProgress?.({ done, total: batches.length });
       } catch (err) {
-        firstError = err;
+        // 只记第一个：后到的多半是被我们主动中止引发的 ABORTED，不能盖掉真正的根因
+        if (!firstError) {
+          firstError = err;
+          abortAll.abort();
+        }
         throw err;
       }
     }
@@ -293,6 +304,8 @@ export async function translateTexts(settings, texts, opts = {}) {
     await Promise.all(Array.from({ length: concurrency }, () => worker()));
   } catch (err) {
     if (!firstError) firstError = err;
+  } finally {
+    signal?.removeEventListener('abort', onExternalAbort);
   }
   if (firstError) throw firstError;
 

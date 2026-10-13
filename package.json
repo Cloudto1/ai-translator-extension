@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Edge / Chrome MV3 扩展：全页面翻译、划词翻译、网页总结（兼容 OpenAI 协议）",
   "scripts": {
-    "test": "node --env-file-if-exists=.env --test tests/unit.test.mjs tests/integration.test.mjs",
-    "test:unit": "node --test tests/unit.test.mjs",
+    "test": "node --env-file-if-exists=.env --test tests/unit.test.mjs tests/robustness.test.mjs tests/integration.test.mjs",
+    "test:unit": "node --test tests/unit.test.mjs tests/robustness.test.mjs",
     "test:integration": "node --env-file-if-exists=.env --test tests/integration.test.mjs",
     "test:e2e": "node --env-file-if-exists=.env tests/e2e.run.mjs"
   },

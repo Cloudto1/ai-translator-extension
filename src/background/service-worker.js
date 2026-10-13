@@ -12,9 +12,15 @@ import {
   resetSettings,
   appendHistory,
   loadCache,
-  saveCache,
+  updateCache,
   clearCache,
 } from '../lib/storage.js';
+import {
+  isExtensionSender,
+  isPrivilegedMessage,
+  isAllowedTabCommand,
+  settingsForContent,
+} from '../lib/access.js';
 import { makeEntry } from '../lib/history.js';
 import { translateTexts, translateOne, resolveRequestLanguagePair } from '../lib/translate.js';
 import { summarizePage } from '../lib/summarize.js';
@@ -28,6 +34,9 @@ import {
   cacheSizeBytes,
   DEFAULT_CACHE_LIMIT,
 } from '../lib/cache.js';
+
+/** 单次批量翻译请求的条目数上限：内容脚本单轮最多收集 1500 处，留足余量即可。 */
+const MAX_TEXTS_PER_REQUEST = 5000;
 
 const MENUS = [
   { id: 'ait-translate-selection', title: 'AI 翻译：翻译选中文本', contexts: ['selection'] },
@@ -71,6 +80,10 @@ function assertConfigured(settings) {
   }
 }
 
+/** 消息是否来自扩展自己的页面（popup / 管理面板），而不是注入网页的内容脚本。 */
+const isExtensionPage = (sender) =>
+  isExtensionSender(sender, { id: chrome.runtime.id, origin: chrome.runtime.getURL('') });
+
 /** 确保目标标签页已注入内容脚本。 */
 async function ensureContent(tabId) {
   try {
@@ -101,14 +114,19 @@ async function recordHistory(fields) {
   }
 }
 
-/** 向标签页下发指令；message 必须是形如 { type: '...' } 的完整消息对象。 */
+/**
+ * 向标签页下发指令；message 必须是形如 { type: '...' } 的完整消息对象。
+ * @returns {Promise<boolean>} 是否成功投递（浏览器内置页、扩展商店等受限页面会失败）
+ */
 async function notifyTab(tabId, message) {
   const injected = await ensureContent(tabId);
-  if (!injected) return;
+  if (!injected) return false;
   try {
     await chrome.tabs.sendMessage(tabId, message);
+    return true;
   } catch (err) {
     console.warn('[AI翻译] 消息投递失败：', err);
+    return false;
   }
 }
 
@@ -151,11 +169,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 chrome.commands?.onCommand.addListener(async (command) => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return;
-  if (command === 'translate-page') notifyTab(tab.id, { type: MSG.CMD_TRANSLATE_PAGE });
-  if (command === 'summarize-page') notifyTab(tab.id, { type: MSG.CMD_SUMMARIZE_PAGE });
-  if (command === 'translate-selection') notifyTab(tab.id, { type: MSG.CMD_TRANSLATE_SELECTION });
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+    if (command === 'translate-page') await notifyTab(tab.id, { type: MSG.CMD_TRANSLATE_PAGE });
+    if (command === 'summarize-page') await notifyTab(tab.id, { type: MSG.CMD_SUMMARIZE_PAGE });
+    if (command === 'translate-selection') await notifyTab(tab.id, { type: MSG.CMD_TRANSLATE_SELECTION });
+  } catch (err) {
+    console.warn('[AI翻译] 快捷键处理失败：', err);
+  }
 });
 
 /* ------------------------------------------------------------------ */
@@ -166,9 +188,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const type = msg?.type;
   if (!type) return undefined;
 
+  if (isPrivilegedMessage(type) && !isExtensionPage(sender)) {
+    sendResponse({ ok: false, message: '无权限执行该操作', code: 'FORBIDDEN' });
+    return false;
+  }
+
   if (type === MSG.GET_SETTINGS) {
+    const fromPage = isExtensionPage(sender);
     getSettings()
-      .then((settings) => sendResponse({ ok: true, settings }))
+      .then((settings) => sendResponse({ ok: true, settings: fromPage ? settings : settingsForContent(settings) }))
       .catch((err) => sendResponse({ ok: false, ...errorPayload(err) }));
     return true;
   }
@@ -186,8 +214,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: false, message: '未找到活动标签页' });
       return true;
     }
+    if (!isAllowedTabCommand(msg.command)) {
+      sendResponse({ ok: false, message: '不支持的操作', code: 'BAD_REQUEST' });
+      return true;
+    }
     notifyTab(tabId, { type: msg.command, text: msg.text })
-      .then(() => sendResponse({ ok: true }))
+      .then((delivered) =>
+        sendResponse(
+          delivered
+            ? { ok: true }
+            : { ok: false, message: '当前页面不支持翻译（如浏览器内置页、扩展商店等受限页面），请切换到普通网页后再试。' },
+        ),
+      )
       .catch((err) => sendResponse({ ok: false, ...errorPayload(err) }));
     return true;
   }
@@ -275,7 +313,12 @@ chrome.runtime.onConnect.addListener((port) => {
       assertConfigured(settings);
 
       if (type === REQ.TRANSLATE_TEXTS) {
-        const texts = payload?.texts || [];
+        if (!Array.isArray(payload?.texts) || payload.texts.length > MAX_TEXTS_PER_REQUEST) {
+          const err = new Error('翻译请求格式不正确或条目过多。');
+          err.code = 'BAD_REQUEST';
+          throw err;
+        }
+        const texts = payload.texts.map((t) => String(t ?? ''));
 
         // 按站点缓存：同站跨页面复用译文，避免站内导航或刷新时把导航栏、页脚、按钮重新翻一遍
         const site = settings.cacheEnabled === false ? '' : siteKeyOf(meta.url || '');
@@ -319,10 +362,11 @@ chrome.runtime.onConnect.addListener((port) => {
           usage = result.usage;
           requestCount = result.requestCount || 0;
 
-          // 没有可入缓的内容就不写盘，避免每次整页翻译都重写整个缓存
+          // 没有可入缓的内容就不写盘，避免每次整页翻译都重写整个缓存。
+          // 用 updateCache 在写入时刻重新读取：多个标签页并发翻译时，拿开头读到的快照去写会互相覆盖。
           if (site && missTexts.some((src, i) => isCacheable(src, result.translations[i]))) {
-            await saveCache(
-              putTranslations(cached, site, result.targetLang, missTexts, result.translations, {
+            await updateCache((latest) =>
+              putTranslations(latest, site, result.targetLang, missTexts, result.translations, {
                 limit: DEFAULT_CACHE_LIMIT,
               }),
             );
@@ -364,7 +408,7 @@ chrome.runtime.onConnect.addListener((port) => {
       }
 
       if (type === REQ.TRANSLATE_ONE) {
-        const sourceText = payload?.text || '';
+        const sourceText = String(payload?.text || '').slice(0, RUNTIME_LIMITS.selectionMaxChars);
         const result = await translateOne(settings, sourceText, {
           sourceLang: payload?.sourceLang,
           targetLang: payload?.targetLang,
@@ -392,7 +436,7 @@ chrome.runtime.onConnect.addListener((port) => {
       }
 
       if (type === REQ.SUMMARIZE) {
-        const pageText = payload?.text || '';
+        const pageText = String(payload?.text || '');
         const result = await summarizePage(settings, {
           title: payload?.title || '',
           url: payload?.url || '',

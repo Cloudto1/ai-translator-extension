@@ -10,6 +10,8 @@
 
 export const CACHE_KEY = 'ait_translation_cache';
 export const DEFAULT_CACHE_LIMIT = 5000;
+/** 缓存体积上限（按 UTF-16 估算）：给翻译记录等其它数据留足 storage.local 的配额。 */
+export const DEFAULT_CACHE_MAX_BYTES = 3 * 1024 * 1024;
 
 /** 超过这个长度的原文不缓存：长文几乎不会重复出现，存着只占地方。 */
 export const MAX_CACHED_SOURCE_CHARS = 1000;
@@ -101,19 +103,33 @@ export function putTranslations(
   return pruneCache([...store.values()].reverse(), limit);
 }
 
-/** 超出上限时丢掉最久未用的（数组尾部）。 */
-export function pruneCache(entries, limit = DEFAULT_CACHE_LIMIT) {
+/**
+ * 超出条数或体积上限时丢掉最久未用的（数组尾部）。
+ * 体积上限不可省：chrome.storage.local 默认配额只有 10MB，且与翻译记录共用；
+ * 只按条数限制的话，长文本条目足以撑爆配额，之后每次写缓存都会失败。
+ */
+export function pruneCache(entries, limit = DEFAULT_CACHE_LIMIT, maxBytes = DEFAULT_CACHE_MAX_BYTES) {
   const max = Number.isFinite(limit) && limit > 0 ? Math.round(limit) : DEFAULT_CACHE_LIMIT;
-  return entries.slice(0, max);
+  const byCount = entries.slice(0, max);
+  const budget = Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : DEFAULT_CACHE_MAX_BYTES;
+
+  let bytes = 0;
+  for (let i = 0; i < byCount.length; i += 1) {
+    bytes += entryBytes(byCount[i]);
+    if (bytes > budget) return byCount.slice(0, i);
+  }
+  return byCount;
+}
+
+function entryBytes(entry) {
+  if (!entry) return 0;
+  // 键与值按 UTF-16 计，再算上少量结构开销
+  return (String(entry.k || '').length + String(entry.v || '').length) * 2 + 40;
 }
 
 /** 粗略估算占用字节数，用于设置页展示。 */
 export function cacheSizeBytes(entries) {
   let bytes = 0;
-  for (const entry of entries) {
-    if (!entry) continue;
-    // 键与值按 UTF-16 计，再算上少量结构开销
-    bytes += (String(entry.k || '').length + String(entry.v || '').length) * 2 + 40;
-  }
+  for (const entry of entries) bytes += entryBytes(entry);
   return bytes;
 }

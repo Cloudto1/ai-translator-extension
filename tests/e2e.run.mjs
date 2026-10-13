@@ -273,6 +273,36 @@ async function useMockModel(extra = {}) {
 
 let sw;
 
+/**
+ * 在扩展内容脚本的隔离环境里执行一段代码（等价于「内容脚本被页面里的漏洞间接操控」）。
+ * 普通的 page.evaluate 跑在页面主世界，拿不到 chrome.runtime，没法模拟内容脚本发出的消息。
+ */
+async function evalInContentScript(targetPage, expression) {
+  const cdp = await ctx.newCDPSession(targetPage);
+  try {
+    const contexts = [];
+    cdp.on('Runtime.executionContextCreated', (event) => contexts.push(event.context));
+    await cdp.send('Runtime.enable');
+    // 内容脚本在 document_idle 才注入，给它一点时间
+    const deadline = Date.now() + 10000;
+    let isolated;
+    while (!(isolated = contexts.find((c) => c.auxData?.type === 'isolated' && String(c.origin).includes(extensionId)))) {
+      if (Date.now() > deadline) throw new Error('未找到扩展内容脚本的隔离执行环境');
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    const res = await cdp.send('Runtime.evaluate', {
+      expression,
+      contextId: isolated.id,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (res.exceptionDetails) throw new Error(res.exceptionDetails.exception?.description || '内容脚本内执行失败');
+    return res.result.value;
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
+}
+
 /* ---------------------------------------------------------------- */
 
 async function main() {
@@ -1005,6 +1035,126 @@ async function main() {
     await popup.close().catch(() => {});
   });
 
+  log('\n【6.5】入口与权限（弹窗划词按钮 / 内容脚本鉴权 / 受限页面）');
+  const popupUrl = `chrome-extension://${extensionId}/src/popup/popup.html`;
+
+  await step('popup「翻译选中文本」按钮能驱动当前页面的选区翻译', async () => {
+    await page.goto(`${baseUrl}/en`);
+    await waitFor(async () => page.locator('#p2').isVisible(), { label: '页面加载' });
+    // 只做选区，不派发 mouseup：确保译文卡片是由 popup 按钮触发的，而不是划词悬浮按钮
+    await page.evaluate(() => {
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById('p2'));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+    assert(await page.locator('.ait-card').isHidden(), '触发前不应有翻译卡片');
+
+    const popup = await ctx.newPage();
+    await popup.goto(popupUrl);
+    await popup.waitForSelector('.action[data-action="translate-selection"]');
+    await sw.evaluate(async (prefix) => {
+      const tabs = await chrome.tabs.query({});
+      const target = tabs.find((t) => (t.url || '').startsWith(prefix));
+      if (target) await chrome.tabs.update(target.id, { active: true });
+    }, `${baseUrl}/en`);
+
+    await popup.click('.action[data-action="translate-selection"]', { noWaitAfter: true });
+    const text = await waitFor(
+      async () => {
+        const state = await page.getAttribute('.ait-card .ait-body', 'data-state').catch(() => null);
+        if (state !== 'done') return null;
+        return deepText('.ait-card .ait-body');
+      },
+      { label: '弹窗按钮触发的划词译文', timeout: 60000 },
+    );
+    assert(countCJK(text) >= 3, `译文异常：${text}`);
+    await page.keyboard.press('Escape');
+    await popup.close().catch(() => {});
+  });
+
+  await step('内容脚本拿不到 API Key，也调不动改配置 / 测连接 / 清缓存等特权操作', async () => {
+    await page.goto(`${baseUrl}/en`);
+    await waitFor(async () => page.locator('#p1').isVisible(), { label: '页面加载' });
+    const before = await readSettings();
+
+    const probe = await evalInContentScript(
+      page,
+      `(async () => {
+        const send = (m) => chrome.runtime.sendMessage(m);
+        return {
+          get: await send({ type: 'GET_SETTINGS' }),
+          save: await send({ type: 'SAVE_SETTINGS', settings: { targetLang: 'ja', baseUrl: 'https://attacker.example' } }),
+          reset: await send({ type: 'RESET_SETTINGS' }),
+          test: await send({ type: 'TEST_CONNECTION', settings: { baseUrl: 'https://attacker.example' } }),
+          clear: await send({ type: 'CLEAR_CACHE' }),
+          stats: await send({ type: 'GET_CACHE_STATS' }),
+          run: await send({ type: 'RUN_ON_TAB', tabId: 1, command: 'CMD_TRANSLATE_PAGE' }),
+        };
+      })()`,
+    );
+
+    // 读设置：能读到（内容脚本要用语言、模式等），但 Key 必须是空的
+    assert(probe.get?.ok === true, '内容脚本应能读取（脱敏后的）设置');
+    assert(probe.get.settings.apiKey === '', `内容脚本不应拿到 API Key，实际：${JSON.stringify(probe.get.settings.apiKey)}`);
+    assert(!JSON.stringify(probe).includes(API.apiKey), '内容脚本收到的任何响应里都不应出现 API Key');
+    assert(probe.get.settings.targetLang === before.targetLang, '脱敏不应改动其它设置项');
+
+    // 特权操作：全部被拒
+    for (const name of ['save', 'reset', 'test', 'clear', 'stats', 'run']) {
+      assert(
+        probe[name]?.ok === false && probe[name]?.code === 'FORBIDDEN',
+        `内容脚本不应能执行 ${name}：${JSON.stringify(probe[name])}`,
+      );
+    }
+
+    // 被拒之后存储里的配置必须原封不动
+    const after = await readSettings();
+    assert(after.apiKey === before.apiKey, 'API Key 被改动');
+    assert(after.baseUrl === before.baseUrl, `baseUrl 被改动：${after.baseUrl}`);
+    assert(after.targetLang === before.targetLang, `targetLang 被改动：${after.targetLang}`);
+
+    // 对照：扩展自己的页面读到的是完整设置
+    const popup = await ctx.newPage();
+    await popup.goto(popupUrl);
+    const full = await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }));
+    assert(full?.ok && full.settings.apiKey === API.apiKey, '扩展页面应能读到完整设置');
+    await popup.close().catch(() => {});
+  });
+
+  await step('受限页面与非法命令：弹窗得到明确反馈，而不是静默失败', async () => {
+    const popup = await ctx.newPage();
+    await popup.goto(popupUrl);
+    // 受限页面：扩展无权注入内容脚本。无头浏览器里 Playwright 打不开 chrome:// 内置页，
+    // 改用 data: 页面——它不在 <all_urls> 的覆盖范围内，同样会被 scripting.executeScript 拒绝
+    const restricted = await ctx.newPage();
+    await restricted.goto('data:text/html,<title>restricted</title><h1>restricted page</h1>');
+    await restricted.bringToFront();
+    // 没有主机权限的页面，tab.url 会被浏览器隐藏，没法按地址找；它是活动标签页，直接取活动标签
+    const tabId = await sw.evaluate(async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      return tab?.id ?? null;
+    });
+    assert(tabId, '未能取得受限页面的标签 ID');
+
+    const res = await popup.evaluate(
+      (id) => chrome.runtime.sendMessage({ type: 'RUN_ON_TAB', tabId: id, command: 'RUN_TRANSLATE_PAGE' }),
+      tabId,
+    );
+    assert(res?.ok === false && /不支持/.test(res.message || ''), `受限页面应返回明确提示：${JSON.stringify(res)}`);
+
+    // 白名单之外的命令不得经由后台透传给标签页
+    const bad = await popup.evaluate(
+      (id) => chrome.runtime.sendMessage({ type: 'RUN_ON_TAB', tabId: id, command: 'GET_STATE' }),
+      tabId,
+    );
+    assert(bad?.ok === false && bad?.code === 'BAD_REQUEST', `非法命令应被拒绝：${JSON.stringify(bad)}`);
+
+    await restricted.close().catch(() => {});
+    await popup.close().catch(() => {});
+  });
+
   log('\n【7】管理面板（配置 / 语言 / 历史 / Token 统计）');
   let optionsPage;
 
@@ -1256,6 +1406,102 @@ async function main() {
     );
     const stored = await sw.evaluate(async () => (await chrome.storage.local.get('ait_history')).ait_history?.length ?? 0);
     assert(stored === 0, `storage 中应已清空，实际 ${stored}`);
+  });
+
+  await step('历史记录的来源链接只放行 http(s)，javascript: 之类的不会变成可点击链接', async () => {
+    const mk = (id, url) => ({
+      id,
+      ts: Date.now(),
+      kind: 'page',
+      model: 'mock',
+      sourceLang: 'en',
+      targetLang: 'zh',
+      itemCount: 1,
+      inputChars: 3,
+      outputChars: 2,
+      durationMs: 10,
+      tokens: { prompt: 1, completion: 1, total: 2 },
+      url,
+      title: id,
+      sourcePreview: 'src',
+      resultPreview: 'dst',
+    });
+    await sw.evaluate(
+      (entries) => chrome.storage.local.set({ ait_history: entries }),
+      [
+        mk('h-evil-js', 'javascript:alert(document.domain)'),
+        mk('h-evil-data', 'data:text/html,<script>alert(1)</script>'),
+        mk('h-good', 'https://example.com/a?x=1&y=2'),
+      ],
+    );
+    await optionsPage.click('.nav-item[data-view="history"]');
+    await waitFor(async () => (await optionsPage.locator('.history-item').count()) === 3, {
+      label: '三条构造的历史记录渲染',
+      timeout: 10000,
+    });
+    const hrefs = await optionsPage.$$eval('.history-item a.link', (as) => as.map((a) => a.getAttribute('href')));
+    assert(hrefs.length === 1, `只应保留 1 个安全链接，实际 ${JSON.stringify(hrefs)}`);
+    assert(hrefs[0] === 'https://example.com/a?x=1&y=2', `安全链接被改写：${hrefs[0]}`);
+    const rel = await optionsPage.getAttribute('.history-item a.link', 'rel');
+    assert(/noopener/.test(rel || '') && /noreferrer/.test(rel || ''), `外链缺少 rel 保护：${rel}`);
+    await sw.evaluate(() => chrome.storage.local.set({ ait_history: [] }));
+    await waitFor(async () => (await optionsPage.locator('.history-item').count()) === 0, {
+      label: '清理构造记录',
+      timeout: 10000,
+    });
+  });
+
+  await step('两个界面各改各的设置，互不覆盖（只提交改动字段）', async () => {
+    await optionsPage.click('.nav-item[data-view="language"]');
+    await optionsPage.waitForSelector('#pageMode');
+    const before = await readSettings();
+
+    // 模拟「另一个界面（如弹窗）」刚改了目标语言；本页表单还停留在旧值
+    await setSettings({ targetLang: 'ko', sourceLang: 'auto' });
+    // 本页只改页面翻译方式——旧实现会把整份旧设置写回，目标语言被还原
+    await optionsPage.selectOption('#pageMode', 'bilingual');
+    await waitFor(async () => (await readSettings())?.pageMode === 'bilingual', {
+      label: '页面翻译方式写入',
+      timeout: 10000,
+    });
+    const after = await readSettings();
+    assert(after.targetLang === 'ko', `另一界面的改动被覆盖：targetLang=${after.targetLang}`);
+
+    // 本页表单也会同步到外部改动
+    await waitFor(async () => (await optionsPage.inputValue('#targetLang')) === 'ko', {
+      label: '表单同步外部改动',
+      timeout: 10000,
+    });
+
+    // 复位
+    await setSettings({ targetLang: before.targetLang, sourceLang: before.sourceLang, pageMode: before.pageMode });
+    await waitFor(async () => (await optionsPage.inputValue('#pageMode')) === before.pageMode, {
+      label: '表单复位',
+      timeout: 10000,
+    });
+  });
+
+  await step('popup 里刚填的配置在失焦时立刻落盘（不用等 400ms 防抖）', async () => {
+    const popup = await ctx.newPage();
+    await popup.goto(popupUrl);
+    await popup.click('.tab[data-tab="settings"]');
+    const original = (await readSettings()).model;
+
+    await popup.fill('#model', 'flush-test-model');
+    const started = Date.now();
+    await popup.locator('#model').blur();
+    await waitFor(async () => (await readSettings())?.model === 'flush-test-model', {
+      label: '失焦后立即写入',
+      timeout: 5000,
+      interval: 20,
+    });
+    const elapsed = Date.now() - started;
+    assert(elapsed < 350, `失焦后应立即保存，实际用了 ${elapsed}ms（防抖是 400ms）`);
+
+    await popup.fill('#model', original);
+    await popup.locator('#model').blur();
+    await waitFor(async () => (await readSettings())?.model === original, { label: '复位模型名', timeout: 5000 });
+    await popup.close().catch(() => {});
   });
 
   await step('导航高亮与当前视图保持一致', async () => {

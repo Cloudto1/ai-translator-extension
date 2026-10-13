@@ -26,6 +26,8 @@
 4. 点击 **测试连接**，看到「连接成功 · xxx ms」即可使用。
 
 > Base URL 会自动补全为 `.../v1/chat/completions`；直接粘贴完整端点也能正确识别。
+>
+> 出于安全考虑，公网地址必须使用 `https://`：API Key 放在请求头里，明文 `http://` 会被沿途的网络设备窃听。只有本机和局域网地址（如 `http://localhost:11434`、`http://192.168.x.x`）允许使用 `http://`。
 
 ## 使用
 
@@ -75,7 +77,9 @@ src/
     summarize.js                  正文清洗与总结
     history.js                    翻译记录与 Token 统计（纯函数）
     protocol.js                   消息/端口协议常量
-    storage.js                    chrome.storage 读写（设置 + 历史）
+    access.js                     后台消息的调用方鉴权（特权操作只认扩展页面）
+    cache.js                      按站点隔离的翻译缓存（LRU，含条数与体积上限）
+    storage.js                    chrome.storage 读写（设置 + 历史 + 缓存，写入串行化）
   background/service-worker.js    集中发起 AI 请求、右键菜单、快捷键、端口路由、写历史
   content/content.js              页面内 UI（Shadow DOM）、三种功能实现
   popup/                          配置与快捷操作弹窗
@@ -83,6 +87,7 @@ src/
 icons/                            图标
 tests/
   unit.test.mjs                   离线单元测试
+  robustness.test.mjs             离线回归测试（鉴权 / API 容错 / 失败处理，全部桩 fetch）
   integration.test.mjs            真实 API 集成测试
   e2e.run.mjs                     Edge 端到端测试（真实加载扩展）
 ```
@@ -92,6 +97,7 @@ tests/
 - 所有 AI 请求都在 **Service Worker** 中发起，绕开页面 CORS 限制，且 API Key 不会被页面脚本读取。
 - 页面内 UI 全部渲染在 **Shadow DOM** 中，与宿主页面样式完全隔离。
 - 全页面翻译按「条目数 + 字符数」双阈值分批，3 路并发；模型返回格式异常时自动拆批重试，若整句被当作专有名词原样返回则会强引导重试补译。
+- API 客户端会自动处理第三方网关的差异：不认识的参数（`thinking` / `temperature` / `stream_options` / `max_tokens`，以及只认 `max_completion_tokens` 的模型）逐个降级重试；遇到 429 / 502 / 503 / 504 按 `Retry-After` 退避重试最多 2 次；批量翻译中任一批失败会立即中止其余在途请求，不再白烧 Token。
 - Token 用量取自接口返回的 `usage`，整页翻译会把多批请求的用量累加；流式请求通过 `stream_options.include_usage` 获取用量，网关不支持时自动降级。
 - 历史记录写入 `chrome.storage.local` 并串行化，避免并发批次互相覆盖；管理面板通过 `chrome.storage.onChanged` 实时刷新，无需手动刷新页面。
 
@@ -104,7 +110,7 @@ npm run test:unit    # 仅离线单元测试
 npm run test:e2e     # 在真实 Edge 中加载扩展跑端到端测试
 ```
 
-测试规模：**22 项离线单元测试 + 18 项真实 API 集成测试 + 21 项 Edge 端到端测试**。
+测试规模：**68 项离线测试 + 18 项真实 API 集成测试 + 40 项 Edge 端到端测试**。
 
 测试使用的 API 配置可通过环境变量覆盖：`AIT_API_KEY`、`AIT_BASE_URL`、`AIT_MODEL`。
 E2E 测试会自动启动本地站点、在真实 Edge 中加载扩展，覆盖 popup 配置、整页翻译与恢复原文、双语对照、划词翻译（中英双向）、自动划词、网页总结、未配置提示、popup → 后台 → 内容脚本全链路，以及管理面板的统计渲染、语言切换、连接测试、历史记录实时更新、筛选搜索删除与面板入口，截图输出到 `tests/.artifacts/`。
@@ -120,4 +126,7 @@ E2E 测试会自动启动本地站点、在真实 Edge 中加载扩展，覆盖 
 
 - 仅在你主动触发翻译或总结时，才会把对应文本发送到你配置的模型服务商。
 - 插件自身不收集、不上报任何数据。API Key 存放在 `chrome.storage.sync`，翻译历史与 Token 统计存放在 `chrome.storage.local`，均只保存在本机浏览器中。
+- 注入网页的内容脚本拿不到 API Key：后台返回给它的设置里 Key 是空的，改配置、测连接、清缓存等特权操作也只接受来自扩展自己页面（弹窗 / 管理面板）的请求。
+- Base URL 校验拒绝「公网地址 + 明文 http」，避免 API Key 在网络上裸奔。
+- 历史记录里的来源链接只放行 `http(s)`，不会渲染 `javascript:` / `data:` 链接。
 - 历史记录中的原文与结果最多各保留 500 字符预览（超出以省略号截断），可在管理面板中随时删除单条或清空全部。

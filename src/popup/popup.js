@@ -85,14 +85,24 @@ function flashSaved(text = '已保存') {
   }, 1600);
 }
 
+// 只提交本次改动的字段，避免用本页加载时的旧值覆盖管理面板里刚改的设置
+let pendingPatch = {};
+
 async function persist(patch, { immediate = true } = {}) {
   settings = { ...settings, ...patch };
+  pendingPatch = { ...pendingPatch, ...patch };
   renderStatus();
   renderLangHint();
   const run = async () => {
-    const res = await chrome.runtime.sendMessage({ type: MSG.SAVE_SETTINGS, settings });
+    const toSave = pendingPatch;
+    pendingPatch = {};
+    if (Object.keys(toSave).length === 0) return;
+    const res = await chrome.runtime.sendMessage({ type: MSG.SAVE_SETTINGS, settings: toSave });
     if (res?.ok) {
-      settings = res.settings;
+      // 只回填「之后没再被改动」的字段，不吞掉保存期间的新输入
+      for (const key of Object.keys(toSave)) {
+        if (!(key in pendingPatch)) settings[key] = res.settings[key];
+      }
       flashSaved();
     } else {
       flashSaved('保存失败');
@@ -233,6 +243,15 @@ function bindEvents() {
   els.baseUrl.addEventListener('input', () => persist({ baseUrl: els.baseUrl.value.trim() }, { immediate: false }));
   els.model.addEventListener('input', () => persist({ model: els.model.value.trim() }, { immediate: false }));
 
+  // 弹窗随时会因为点到别处而被浏览器直接关掉，400ms 的防抖来不及触发。
+  // 失焦与关闭时立刻把还没写入的输入落盘，否则刚填的 API Key 会丢。
+  const flushPending = () => {
+    window.clearTimeout(saveTimer);
+    return persist({}, { immediate: true });
+  };
+  for (const input of [els.apiKey, els.baseUrl, els.model]) input.addEventListener('change', flushPending);
+  window.addEventListener('pagehide', flushPending);
+
   els.toggleKey.addEventListener('click', () => {
     const showing = els.apiKey.type === 'text';
     els.apiKey.type = showing ? 'password' : 'text';
@@ -242,6 +261,9 @@ function bindEvents() {
   els.testBtn.addEventListener('click', testConnection);
 
   els.resetBtn.addEventListener('click', async () => {
+    // 丢弃未写入的输入，免得防抖定时器稍后把旧值写回去
+    window.clearTimeout(saveTimer);
+    pendingPatch = {};
     const res = await chrome.runtime.sendMessage({ type: MSG.RESET_SETTINGS });
     if (res?.ok) {
       settings = res.settings;

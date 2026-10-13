@@ -7,6 +7,7 @@ import {
   getSettings,
   saveSettings,
   resetSettings,
+  onSettingsChanged,
   loadHistory,
   deleteHistoryEntry,
   clearHistory,
@@ -97,6 +98,19 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
+/**
+ * 只放行 http(s) 链接。历史记录里的 url 是存储里的数据，不能直接当 href 用：
+ * escapeHtml 只防得住「跳出属性」，防不住 javascript: / data: 这类协议本身。
+ */
+function safeHttpUrl(value) {
+  try {
+    const url = new URL(String(value ?? ''));
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
 function toast(message, type = 'info') {
   els.toast.textContent = message;
   els.toast.className = `toast${type === 'error' ? ' is-err' : ''}`;
@@ -172,17 +186,29 @@ function renderPageLimitHint() {
     : `一次「翻译整页」最多翻译 ${formatNumber(settings.pageTranslateLimit)} 处文本，达到上限后提示再点一次继续。`;
 }
 
+// 待写入的改动。只提交「本次改了什么」，而不是整份设置：
+// 整份覆盖会把弹窗里刚改的语言之类的设置，用本页加载时的旧值又写回去。
+let pendingPatch = {};
+
 function persist(patch, { immediate = true } = {}) {
   settings = { ...settings, ...patch };
+  pendingPatch = { ...pendingPatch, ...patch };
   renderConnStatus();
   renderLangHint();
 
   const run = async () => {
-    const next = await saveSettings(settings);
-    settings = next;
-    if (patch.historyLimit) await trimHistory(next.historyLimit);
-    els.historyLimit.value = String(next.historyLimit);
-    els.pageTranslateLimit.value = String(next.pageTranslateLimit);
+    const toSave = pendingPatch;
+    pendingPatch = {};
+    if (Object.keys(toSave).length === 0) return;
+    const next = await saveSettings(toSave);
+    // 把归一化后的值回填给「本次保存涉及、且之后没有再被改动」的字段，
+    // 不能整体替换 settings，否则会吞掉保存期间用户的新输入
+    for (const key of Object.keys(toSave)) {
+      if (!(key in pendingPatch)) settings[key] = next[key];
+    }
+    if ('historyLimit' in toSave) await trimHistory(settings.historyLimit);
+    els.historyLimit.value = String(settings.historyLimit);
+    els.pageTranslateLimit.value = String(settings.pageTranslateLimit);
     renderPageLimitHint();
     renderHistorySummary();
   };
@@ -327,6 +353,7 @@ function renderHistory() {
   els.historyList.innerHTML = list
     .map((entry) => {
       const langPair = `${langLabel(entry.sourceLang)} → ${langLabel(entry.targetLang)}`;
+      const link = safeHttpUrl(entry.url);
       return `<article class="history-item" data-id="${escapeHtml(entry.id)}">
         <div class="history-top">
           <span class="tag kind-${escapeHtml(entry.kind)}">${escapeHtml(kindLabel(entry.kind))}</span>
@@ -352,8 +379,8 @@ function renderHistory() {
         <div class="history-actions">
           <button class="link" data-action="copy" data-id="${escapeHtml(entry.id)}" type="button">复制结果</button>
           ${
-            entry.url
-              ? `<a class="link" href="${escapeHtml(entry.url)}" target="_blank" rel="noreferrer" title="${escapeHtml(entry.title || entry.url)}">打开来源页面</a>`
+            link
+              ? `<a class="link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(entry.title || link)}">打开来源页面</a>`
               : ''
           }
           <button class="link danger" data-action="delete" data-id="${escapeHtml(entry.id)}" type="button">删除</button>
@@ -532,6 +559,14 @@ function bindEvents() {
   els.baseUrl.addEventListener('input', () => persist({ baseUrl: els.baseUrl.value.trim() }, { immediate: false }));
   els.model.addEventListener('input', () => persist({ model: els.model.value.trim() }, { immediate: false }));
 
+  // 失焦与关闭页面时立刻落盘：防抖窗口内关掉标签页，刚输入的 Key 就丢了
+  const flushPending = () => {
+    window.clearTimeout(saveTimer);
+    return persist({}, { immediate: true });
+  };
+  for (const input of [els.apiKey, els.baseUrl, els.model]) input.addEventListener('change', flushPending);
+  window.addEventListener('pagehide', flushPending);
+
   els.toggleKey.addEventListener('click', () => {
     const showing = els.apiKey.type === 'text';
     els.apiKey.type = showing ? 'password' : 'text';
@@ -542,6 +577,9 @@ function bindEvents() {
 
   els.resetBtn.addEventListener('click', async () => {
     if (!window.confirm('确定要恢复默认设置吗？API Key 也会被清空。')) return;
+    // 丢弃还没来得及写入的输入，否则防抖定时器稍后会把旧值又写回去，「恢复默认」就白做了
+    window.clearTimeout(saveTimer);
+    pendingPatch = {};
     settings = await resetSettings();
     fillForm();
     renderConnStatus();
@@ -558,6 +596,15 @@ function bindEvents() {
   onStatsChanged((next) => {
     statsData = next;
     if (activeView === 'dashboard') renderDashboard();
+  });
+
+  // 弹窗里改了语言等设置时，本页表单跟着刷新。有未保存的输入时不动，免得打断正在输入的人
+  onSettingsChanged((next) => {
+    if (Object.keys(pendingPatch).length > 0) return;
+    if (JSON.stringify(next) === JSON.stringify(settings)) return;
+    settings = next;
+    fillForm();
+    renderConnStatus();
   });
 }
 
