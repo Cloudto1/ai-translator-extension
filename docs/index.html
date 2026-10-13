@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- 主题色随系统：浅色 / 深色各一条，与 styles.css 的令牌对应 -->
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F8FAFC">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#14161D">
-<title>AI 翻译助手 · 把整个网页，翻译成你的语言</title>
-<meta name="description" content="一款基于大模型的浏览器翻译扩展：全页面翻译、划词翻译、网页总结。兼容任意 OpenAI 协议服务，API Key 由你掌控，插件不收集任何数据。">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#F7F6F2">
+<title>AI 翻译助手 · 任何外文网页，一键读懂</title>
+<meta name="description" content="一款基于大模型的浏览器翻译扩展：整页双语对照、划词翻译、网页总结。兼容任意 OpenAI 协议服务，API Key 由你掌控，插件不收集任何数据。">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 <link rel="icon" type="image/png" sizes="48x48" href="icons/icon48.png">
 <link rel="apple-touch-icon" href="icons/icon128.png">
 <link rel="stylesheet" href="styles.css">
@@ -15,47 +15,75 @@
 <body>
 <a class="skip-link" href="#main">跳到主要内容</a>
 
-<!-- 图标精灵：与扩展同一套（24x24 / 1.75 描边 / 颜色随 currentColor）-->
 <svg class="icon-sprite" aria-hidden="true" focusable="false">
   <symbol id="i-globe" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="9" />
-    <path d="M3 12h18" />
-    <path d="M12 3c2.6 2.7 2.6 15.3 0 18" />
-    <path d="M12 3c-2.6 2.7-2.6 15.3 0 18" />
-  </symbol>
-  <symbol id="i-lines" viewBox="0 0 24 24">
-    <path d="M4 6h16" />
-    <path d="M4 12h11" />
-    <path d="M4 18h14" />
+    <circle cx="12" cy="12" r="9" /><path d="M3 12h18" />
+    <path d="M12 3c2.6 2.7 2.6 15.3 0 18" /><path d="M12 3c-2.6 2.7-2.6 15.3 0 18" />
   </symbol>
   <symbol id="i-selection" viewBox="0 0 24 24">
-    <path d="M7 4H5.5A1.5 1.5 0 0 0 4 5.5V7" />
-    <path d="M17 4h1.5A1.5 1.5 0 0 1 20 5.5V7" />
-    <path d="M7 20H5.5A1.5 1.5 0 0 1 4 18.5V17" />
-    <path d="M17 20h1.5a1.5 1.5 0 0 0 1.5-1.5V17" />
-    <path d="M12 8v8" />
-    <path d="M9.5 8h5" />
-    <path d="M9.5 16h5" />
+    <path d="M7 4H5.5A1.5 1.5 0 0 0 4 5.5V7" /><path d="M17 4h1.5A1.5 1.5 0 0 1 20 5.5V7" />
+    <path d="M7 20H5.5A1.5 1.5 0 0 1 4 18.5V17" /><path d="M17 20h1.5a1.5 1.5 0 0 0 1.5-1.5V17" />
+    <path d="M12 8v8" /><path d="M9.5 8h5" /><path d="M9.5 16h5" />
   </symbol>
-  <symbol id="i-lock" viewBox="0 0 24 24">
-    <rect x="4.5" y="10.5" width="15" height="9.5" rx="2.5" />
-    <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+  <symbol id="i-lines" viewBox="0 0 24 24">
+    <path d="M4 6h16" /><path d="M4 12h11" /><path d="M4 18h14" />
+  </symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24">
+    <path d="M13 3 5.5 13.2H11L10 21l8.5-10.6H13L13 3Z" />
+  </symbol>
+  <symbol id="i-database" viewBox="0 0 24 24">
+    <ellipse cx="12" cy="6" rx="7" ry="3" />
+    <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" /><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+  </symbol>
+  <symbol id="i-list" viewBox="0 0 24 24">
+    <path d="M9 6h11" /><path d="M9 12h11" /><path d="M9 18h11" />
+    <path d="M4.5 6h.01" /><path d="M4.5 12h.01" /><path d="M4.5 18h.01" />
+  </symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24">
+    <path d="M5 20v-7" /><path d="M12 20V5" /><path d="M19 20V10" />
+  </symbol>
+  <symbol id="i-isolate" viewBox="0 0 24 24">
+    <rect x="3.5" y="3.5" width="17" height="17" rx="3.5" stroke-dasharray="3 3" />
+    <rect x="9" y="9" width="6" height="6" rx="1.5" />
+  </symbol>
+  <symbol id="i-languages" viewBox="0 0 24 24">
+    <path d="M3 6h10" /><path d="M8 4v2" />
+    <path d="M5 6c.6 3.2 3 5.6 6 6.5" /><path d="M11 6c-.6 3.2-3 5.6-6 6.5" />
+    <path d="m12.5 20 4-9 4 9" /><path d="M14 17h5" />
+  </symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24">
+    <rect x="2.5" y="6" width="19" height="12" rx="2.5" />
+    <path d="M6.5 10h.01" /><path d="M10 10h.01" /><path d="M14 10h.01" /><path d="M17.5 10h.01" /><path d="M8 14h8" />
+  </symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24">
+    <path d="M12 3 5 6v5.5c0 4.4 3 7.9 7 9.5 4-1.6 7-5.1 7-9.5V6l-7-3Z" /><path d="m9 12 2.2 2.2L15.5 10" />
+  </symbol>
+  <symbol id="i-download" viewBox="0 0 24 24">
+    <path d="M12 4v11" /><path d="m7.5 11 4.5 4.5 4.5-4.5" /><path d="M5 20h14" />
+  </symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24">
+    <rect x="9" y="9" width="11" height="11" rx="2.5" />
+    <path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9" />
+  </symbol>
+  <symbol id="i-code" viewBox="0 0 24 24">
+    <path d="m8 7-5 5 5 5" /><path d="m16 7 5 5-5 5" />
   </symbol>
 </svg>
 
 <header class="topbar" data-topbar>
   <div class="wrap topbar__inner">
-    <a class="brand" href="#top">
-      <img class="brand__mark" src="icons/icon128.png" alt="" width="34" height="34" decoding="async">
+    <a class="brand" href="#top" aria-label="AI 翻译助手，回到顶部">
+      <img class="brand__mark" src="icons/icon48.png" alt="" width="32" height="32" decoding="async">
       <span class="brand__name">AI 翻译助手</span>
     </a>
     <nav class="nav" id="nav" aria-label="主导航" data-nav>
-      <a href="#intro">产品</a>
       <a href="#features">功能</a>
+      <a href="#model">模型与隐私</a>
       <a href="#install">安装</a>
-      <a href="#compat">兼容</a>
+      <a href="#faq">常见问题</a>
+      <a class="nav__gh" href="https://github.com/Cloudto1/ai-translator-extension" target="_blank" rel="noopener noreferrer">GitHub</a>
     </nav>
-    <a class="btn btn--sm btn--signal topbar__cta" href="https://github.com/Cloudto1/ai-translator-extension/archive/refs/heads/main.zip">下载扩展</a>
+    <a class="btn btn--primary btn--sm topbar__cta" href="https://github.com/Cloudto1/ai-translator-extension/archive/refs/heads/main.zip">免费下载</a>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav" aria-label="打开导航菜单" data-nav-toggle>
       <span></span><span></span>
     </button>
@@ -64,247 +92,197 @@
 
 <main id="main">
 
-  <!-- ============ HERO ============ -->
   <section class="hero" id="top">
     <div class="wrap hero__inner">
       <div class="hero__copy">
-        <p class="eyebrow hero__kicker">AI 驱动 · 兼容 OpenAI 协议</p>
-
-        <h1 class="hero__title">
-          <span class="hero__source">Translate the whole page.</span>
-          <span class="hero__result">把整个网页，翻译成你的语言</span>
-        </h1>
-
-        <p class="hero__lead">一款基于大模型的浏览器翻译扩展。整页翻译、划词翻译、网页总结，一个插件全部搞定——而且只在你说要翻的时候，才把你的文字发给你自己配置的模型服务。</p>
-
-        <div class="hero__actions">
-          <a class="btn btn--signal" href="https://github.com/Cloudto1/ai-translator-extension/archive/refs/heads/main.zip">下载扩展</a>
-          <a class="btn btn--ghost" href="#install">查看安装步骤</a>
+        <p class="eyebrow">Edge · Chrome 浏览器扩展</p>
+        <h1 class="hero__title">任何外文网页，<br>一键读懂</h1>
+        <p class="hero__lead">按一下快捷键，整页文章在原文下方逐段出现译文。划词即译、长文一键总结，用的是你自己选的大模型。</p>
+        <div class="hero__cta">
+          <a class="btn btn--primary" href="https://github.com/Cloudto1/ai-translator-extension/archive/refs/heads/main.zip">
+            <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>下载扩展 ZIP
+          </a>
+          <a class="btn btn--ghost" href="#install">三分钟装好</a>
         </div>
-
-        <ul class="stats">
-          <li class="stat"><b class="stat__num">9</b><span class="stat__label">种目标语言</span></li>
-          <li class="stat"><b class="stat__num">3</b><span class="stat__label">种翻译方式</span></li>
-          <li class="stat"><b class="stat__num">0</b><span class="stat__label">数据上传</span></li>
-        </ul>
-
-        <ul class="hero__keys">
-          <li><span class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>T</kbd></span>翻译整页</li>
-          <li><span class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>E</kbd></span>翻译选中</li>
-          <li><span class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></span>总结网页</li>
+        <ul class="hero__meta">
+          <li>开源免费</li>
+          <li>无需注册</li>
+          <li>不收集数据</li>
         </ul>
       </div>
 
-      <div class="hero__visual" aria-hidden="true">
-        <div class="mock">
-          <div class="mock__bar"><i></i><i></i><i></i><span class="mock__url mono">example.com/article</span></div>
-          <div class="mock__body">
-            <div class="tx">
-              <p class="tx__src" lang="en"><span class="lang mono">EN</span>Webb captured the sharpest infrared image of the early universe yet.</p>
-              <p class="tx__dst" lang="zh-CN"><span class="lang mono">中</span>韦布望远镜拍下了迄今最清晰的早期宇宙红外图像。</p>
-            </div>
-            <div class="tx">
-              <p class="tx__src" lang="en"><span class="lang mono">EN</span>Some galaxies formed 300 million years after the Big Bang.</p>
-              <p class="tx__dst" lang="zh-CN"><span class="lang mono">中</span>部分星系在大爆炸后仅 3 亿年就已形成。</p>
-            </div>
+      <figure class="reader" data-demo="page" data-view="bilingual">
+        <div class="reader__bar">
+          <span class="reader__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="reader__url">nature.example/articles/webb</span>
+        </div>
+        <div class="reader__tools">
+          <div class="seg" role="group" aria-label="切换显示方式">
+            <button type="button" data-mode="source" aria-pressed="false">原文</button>
+            <button type="button" data-mode="bilingual" aria-pressed="true">双语对照</button>
+            <button type="button" data-mode="target" aria-pressed="false">仅译文</button>
           </div>
+          <span class="reader__lang">English → 简体中文</span>
         </div>
-      </div>
+        <article class="reader__body">
+          <h2 class="pair pair--title">
+            <span class="s" lang="en">Webb peers deeper into the early universe</span>
+            <span class="t" lang="zh-CN">韦布望远镜看得更深，直抵早期宇宙</span>
+          </h2>
+          <p class="pair">
+            <span class="s" lang="en">The telescope has captured the sharpest infrared image of distant galaxies to date.</span>
+            <span class="t" lang="zh-CN">这台望远镜拍下了迄今最清晰的遥远星系红外图像。</span>
+          </p>
+          <p class="pair">
+            <span class="s" lang="en">Some of them formed only 300 million years after the Big Bang — far earlier than models predicted.</span>
+            <span class="t" lang="zh-CN">其中一些星系在大爆炸后仅 3 亿年就已形成，远早于模型的预测。</span>
+          </p>
+        </article>
+        <figcaption class="sr-only">示意：同一篇英文文章在原文、双语对照、仅译文三种模式下的显示效果。</figcaption>
+      </figure>
     </div>
   </section>
 
-  <!-- ============ INTRO ============ -->
-  <section class="section" id="intro">
-    <div class="wrap split">
-      <div class="split__head">
-        <p class="eyebrow">产品介绍</p>
-        <h2 class="h2">它是什么</h2>
-        <p class="split__en mono">What it is</p>
-      </div>
-      <div class="split__body">
-        <p class="lead">AI 翻译助手是一个浏览器扩展。它不替你决定用哪个模型——API Key、Base URL、模型名全部由你填写，可以接 DeepSeek、OpenAI、通义、Moonshot，也可以接你自己的网关。</p>
-
-        <ul class="facts">
-          <li class="fact">
-            <h3 class="fact__t">请求在后台发出</h3>
-            <p class="fact__d">所有 AI 请求由 Service Worker 统一发起，绕开页面的跨域限制，API Key 不会暴露给任何网页脚本。</p>
-          </li>
-          <li class="fact">
-            <h3 class="fact__t">页面内的界面是隔离的</h3>
-            <p class="fact__d">翻译按钮、译文卡片、总结抽屉都渲染在 Shadow DOM 里，既不被网页样式影响，也不打扰网页本身。</p>
-          </li>
-          <li class="fact">
-            <h3 class="fact__t">不收集，不上报</h3>
-            <p class="fact__d">只有你主动触发翻译或总结时，才会把对应的文字发往你自己配置的服务商。插件本身不采集任何数据。</p>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ FEATURES ============ -->
-  <section class="section" id="features">
+  <section class="section" id="features" aria-labelledby="features-title">
     <div class="wrap">
-      <header class="sec-head sec-head--center">
-        <p class="eyebrow">核心功能</p>
-        <h2 class="h2">三种翻译方式，覆盖所有场景</h2>
-        <p class="sec-head__en mono">Three ways to read</p>
-        <p class="sec-head__lead">无论是通读整篇外文文章、随手查一个词，还是先判断长文值不值得读，都能一步完成。</p>
+      <header class="sec-head">
+        <p class="eyebrow">三种用法</p>
+        <h2 class="h2" id="features-title">整篇读、随手查、先看重点</h2>
       </header>
 
-      <article class="feature">
-        <div class="feature__text">
-          <span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-globe" /></svg></span>
-          <p class="feature__key mono"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>T</kbd></p>
-          <h3 class="feature__t">全页面翻译</h3>
-          <p class="feature__d">自动识别页面正文，分批调用模型翻译，长文也能边翻边读。可以「替换原文」，也可以「双语对照」——原文与译文逐段并排，再点一次即一键恢复原文。</p>
-          <ul class="feature__tags">
-            <li>替换原文</li><li>双语对照</li><li>一键恢复</li>
-          </ul>
-        </div>
-        <div class="feature__demo">
-          <div class="demo" data-demo="page">
-            <div class="seg" role="group" aria-label="页面翻译方式">
-              <button class="chip" type="button" data-mode="replace" aria-pressed="false">替换原文</button>
-              <button class="chip chip--on" type="button" data-mode="bilingual" aria-pressed="true">双语对照</button>
-            </div>
-            <div class="demo__body">
-              <div class="tx">
-                <p class="tx__src" lang="en">Browsers sandbox every page, so a translation layer never leaks into the site's layout.</p>
-                <p class="tx__dst" lang="zh-CN">浏览器对页面做了沙箱隔离，翻译层不会渗进站点自身的布局。</p>
-              </div>
-              <div class="tx">
-                <p class="tx__src" lang="en">Select a paragraph and the extension returns a translation in place.</p>
-                <p class="tx__dst" lang="zh-CN">选中段落即可就地得到译文，原文一次点击就能恢复。</p>
-              </div>
-            </div>
+      <div class="uses">
+        <article class="use">
+          <div class="use__art" aria-hidden="true">
+            <p class="mini-s">Some galaxies formed early.</p>
+            <p class="mini-t">部分星系很早就已形成。</p>
+            <p class="mini-s">The survey covers 10,000 sources.</p>
+            <p class="mini-t">这次巡天收录了一万个天体。</p>
           </div>
-        </div>
-      </article>
+          <h3 class="use__t">整页翻译</h3>
+          <p class="use__d">自动识别正文，分批翻译，边翻边显示。双语对照或替换原文二选一，再按一次即恢复。</p>
+          <p class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>T</kbd></p>
+        </article>
 
-      <article class="feature feature--rev">
-        <div class="feature__text">
-          <span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-selection" /></svg></span>
-          <p class="feature__key mono"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>E</kbd></p>
-          <h3 class="feature__t">划词翻译</h3>
-          <p class="feature__d">选中任意文字，点一下悬浮按钮就有译文；也可以开启「划词后自动翻译」，选中即出结果。译文流式输出，支持一键复制。</p>
-          <ul class="feature__tags">
-            <li>悬浮按钮</li><li>自动触发</li><li>流式输出</li>
-          </ul>
-        </div>
-        <div class="feature__demo">
-          <div class="demo demo--sel" aria-hidden="true">
-            <p class="doc" lang="en">A floating button appears whenever you select text, so <span class="mark">a phrase takes one click to translate</span>.</p>
-            <div class="bubble">
-              <span class="bubble__tag mono">划词翻译</span>
-              <p class="bubble__dst" lang="zh-CN">一个短语只需一次点击就能译好。</p>
-            </div>
+        <article class="use">
+          <div class="use__art use__art--sel" aria-hidden="true">
+            <p class="mini-doc" lang="en">Select any text and <mark>get a translation in place</mark>.</p>
+            <div class="mini-pop" lang="zh-CN">就地得到译文</div>
           </div>
-        </div>
-      </article>
+          <h3 class="use__t">划词翻译</h3>
+          <p class="use__d">选中文字，点悬浮按钮就出译文；也可以设成选中即翻译。结果可一键复制。</p>
+          <p class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>E</kbd></p>
+        </article>
 
-      <article class="feature">
-        <div class="feature__text">
-          <span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-lines" /></svg></span>
-          <p class="feature__key mono"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></p>
-          <h3 class="feature__t">网页总结</h3>
-          <p class="feature__d">抽取页面正文，生成「一句话总结 + 要点列表」，以流式方式展示在右侧抽屉里。长文、报告、论坛帖，几秒抓住重点。按 <kbd>Esc</kbd> 关闭。</p>
-          <ul class="feature__tags">
-            <li>一句话总结</li><li>要点列表</li><li>侧边抽屉</li>
-          </ul>
-        </div>
-        <div class="feature__demo">
-          <div class="demo demo--sum" aria-hidden="true">
-            <div class="demo__doc">
-              <p class="doc-line" lang="en">Astronomers have released the most detailed infrared survey of the early universe to date.</p>
-              <p class="doc-line" lang="en">The catalogue includes galaxies that formed 300 million years after the Big Bang.</p>
-            </div>
-            <aside class="drawer">
-              <span class="drawer__tag mono">页面总结</span>
-              <p class="drawer__lead" lang="zh-CN">文章介绍韦布望远镜最新的早期宇宙巡天。</p>
-              <ul class="drawer__list">
-                <li lang="zh-CN">发布迄今最详细的早期宇宙红外巡天</li>
-                <li lang="zh-CN">部分星系形成于大爆炸后 3 亿年</li>
-                <li lang="zh-CN">形成时间早于多数模型预测</li>
-              </ul>
-            </aside>
+        <article class="use">
+          <div class="use__art use__art--sum" aria-hidden="true">
+            <p class="mini-lead">一句话：韦布望远镜发布最新早期宇宙巡天。</p>
+            <ul class="mini-list">
+              <li>迄今最清晰的红外图像</li>
+              <li>星系形成早于模型预测</li>
+            </ul>
           </div>
-        </div>
-      </article>
+          <h3 class="use__t">网页总结</h3>
+          <p class="use__d">把长文浓缩成一句话和几条要点，在侧边栏流式显示，几秒判断值不值得细读。</p>
+          <p class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></p>
+        </article>
+      </div>
+
+      <ul class="details" aria-label="更多细节">
+        <li><svg class="icon" aria-hidden="true"><use href="#i-bolt" /></svg><div><b>流式输出</b><span>译文边生成边显示，不用干等。</span></div></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-database" /></svg><div><b>翻译缓存</b><span>重复出现的句子直接命中，省 Token。</span></div></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-languages" /></svg><div><b>9 种目标语言</b><span>自动识别原文，中英之间自动互译。</span></div></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-list" /></svg><div><b>翻译记录</b><span>原文与译文对照保存，可搜索、复制。</span></div></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-chart" /></svg><div><b>用量统计</b><span>调用次数、Token、耗时与 30 天趋势。</span></div></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-isolate" /></svg><div><b>不破坏页面</b><span>插件界面放在 Shadow DOM 里，与网页样式互不干扰。</span></div></li>
+      </ul>
     </div>
   </section>
 
-  <!-- ============ INSTALL ============ -->
-  <section class="section" id="install">
+  <section class="section section--alt" id="model" aria-labelledby="model-title">
+    <div class="wrap split">
+      <div>
+        <p class="eyebrow">模型与隐私</p>
+        <h2 class="h2" id="model-title">你的 Key，你的模型，<br>你的数据</h2>
+        <p class="lead">任何兼容 OpenAI <code>chat/completions</code> 的服务都能接入，包括自建网关。插件没有服务器，也没有账号体系。</p>
+        <ul class="checks">
+          <li><svg class="icon" aria-hidden="true"><use href="#i-shield" /></svg>只在你主动翻译或总结时，才把文字发给你配置的服务</li>
+          <li><svg class="icon" aria-hidden="true"><use href="#i-shield" /></svg>API Key 只保存在本机浏览器，网页脚本读不到</li>
+          <li><svg class="icon" aria-hidden="true"><use href="#i-shield" /></svg>翻译记录与用量统计只存在本地，随时可清空</li>
+        </ul>
+        <ul class="chips" aria-label="已验证的服务商">
+          <li>DeepSeek</li><li>OpenAI</li><li>通义千问</li><li>Moonshot</li><li>自建网关</li>
+        </ul>
+      </div>
+
+      <div class="config" aria-hidden="true">
+        <p class="config__head"><img src="icons/icon48.png" alt="" width="20" height="20">设置 · 模型服务</p>
+        <div class="field"><span>API Key</span><b>sk-••••••••••••3f9a</b></div>
+        <div class="field"><span>Base URL</span><b>https://api.deepseek.com</b></div>
+        <div class="field"><span>模型</span><b>deepseek-flash</b></div>
+        <div class="config__foot"><span class="ok-dot"></span>连接成功 · 312 ms</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="install" aria-labelledby="install-title">
     <div class="wrap">
-      <header class="sec-head sec-head--center">
-        <p class="eyebrow">安装指南</p>
-        <h2 class="h2">四步装好，不用注册</h2>
-        <p class="sec-head__en mono">Install</p>
-        <p class="sec-head__lead">下载解压、加载到浏览器、填一次 API 配置即可。Edge 与 Chrome 110 及以上版本都支持。</p>
+      <header class="sec-head">
+        <p class="eyebrow">安装</p>
+        <h2 class="h2" id="install-title">四步装好，不用注册</h2>
+        <p class="sec-head__lead">支持 Microsoft Edge 与 Google Chrome 110 及以上版本。</p>
       </header>
 
       <ol class="steps">
         <li class="step">
-          <h3 class="step__t">下载扩展文件</h3>
-          <p class="step__d">从 GitHub 下载 ZIP 并解压到本地任意目录。解压后确认根目录下能看到 <code>manifest.json</code>——它就是第三步要选的文件夹。</p>
-          <div class="dl">
-            <a class="btn btn--signal btn--sm" href="https://github.com/Cloudto1/ai-translator-extension/archive/refs/heads/main.zip">下载 ZIP</a>
-            <a class="btn btn--outline btn--sm" href="https://github.com/Cloudto1/ai-translator-extension" target="_blank" rel="noopener noreferrer">在 GitHub 查看</a>
+          <h3 class="step__t">下载并解压</h3>
+          <p class="step__d">下载 ZIP 解压到任意目录，确认里面有 <code>manifest.json</code>。会用 git 的话也可以直接克隆：</p>
+          <div class="cmd">
+            <code class="cmd__text" id="clone-cmd">git clone https://github.com/Cloudto1/ai-translator-extension.git</code>
+            <button class="cmd__copy" type="button" data-copy="#clone-cmd" aria-label="复制克隆命令">
+              <svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg><span data-copy-label>复制</span>
+            </button>
           </div>
-          <p class="step__cmd mono">git clone https://github.com/Cloudto1/ai-translator-extension.git</p>
+          <p class="hint" role="status" aria-live="polite" data-copy-status>没装 git 也没关系，下载 ZIP 效果一样。</p>
         </li>
         <li class="step">
           <h3 class="step__t">打开开发者模式</h3>
-          <p class="step__d">在地址栏输入 <code>edge://extensions/</code>（Chrome 则是 <code>chrome://extensions/</code>），打开页面左下角的「开发人员模式」。</p>
+          <p class="step__d">地址栏输入 <code>edge://extensions</code> 或 <code>chrome://extensions</code>，打开「开发人员模式」开关。</p>
         </li>
         <li class="step">
-          <h3 class="step__t">加载扩展程序</h3>
-          <p class="step__d">点击「加载解压缩的扩展」，选择刚才解压出来、包含 <code>manifest.json</code> 的文件夹。</p>
+          <h3 class="step__t">加载扩展</h3>
+          <p class="step__d">点「加载解压缩的扩展」，选中含 <code>manifest.json</code> 的那个文件夹。</p>
         </li>
         <li class="step">
-          <h3 class="step__t">填写配置并测试连接</h3>
-          <p class="step__d">点击工具栏中的扩展图标，在设置页填写三项信息，再点「测试连接」。看到「连接成功」就可以开始用了。</p>
-          <div class="codecard mono">
-            <span><i>API Key</i><b>sk-xxxxxxxx</b></span>
-            <span><i>Base URL</i><b>https://api.deepseek.com</b></span>
-            <span><i>模型</i><b>deepseek-flash</b></span>
-          </div>
+          <h3 class="step__t">填好模型配置</h3>
+          <p class="step__d">点工具栏里的图标进入设置，填 API Key、Base URL 和模型名，点「测试连接」看到成功即可开用。</p>
         </li>
       </ol>
-
-      <div class="note-card">
-        <svg class="icon note-card__icon" aria-hidden="true"><use href="#i-lock" /></svg>
-        <p>插件不收集、不上报任何数据。只有你主动触发翻译或总结时，才会把对应的文字发往你自己配置的服务商。</p>
-      </div>
     </div>
   </section>
 
-  <!-- ============ COMPAT ============ -->
-  <section class="section section--tight" id="compat">
-    <div class="wrap">
-      <header class="sec-head sec-head--center">
-        <p class="eyebrow">兼容性</p>
-        <h2 class="h2">接你自己的模型服务</h2>
-        <p class="sec-head__en mono">Compatibility</p>
+  <section class="section section--alt" id="faq" aria-labelledby="faq-title">
+    <div class="wrap faq">
+      <header class="sec-head">
+        <p class="eyebrow">常见问题</p>
+        <h2 class="h2" id="faq-title">装之前你可能想知道</h2>
       </header>
-      <div class="compat">
-        <div class="compat__col">
-          <span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-globe" /></svg></span>
-          <h3 class="h3">兼容的模型服务</h3>
-          <p class="compat__d">任何兼容 OpenAI <code>chat/completions</code> 的服务都能接入，包括自建网关。</p>
-          <ul class="chips">
-            <li>DeepSeek</li><li>OpenAI</li><li>通义千问</li><li>Moonshot</li><li>自建网关</li>
-          </ul>
-        </div>
-        <div class="compat__col">
-          <span class="icon-tile"><svg class="icon" aria-hidden="true"><use href="#i-lines" /></svg></span>
-          <h3 class="h3">运行环境</h3>
-          <p class="compat__d">基于 Manifest V3，Chromium 内核 110 及以上版本均可加载。</p>
-          <ul class="chips">
-            <li>Microsoft Edge</li><li>Google Chrome</li><li>Chromium 内核</li>
-          </ul>
-        </div>
+      <div class="faq__list">
+        <details>
+          <summary>要花钱吗？</summary>
+          <p>插件本身免费开源。翻译调用的是你自己的模型服务，按服务商的价格计费；有翻译缓存，同样的句子不会重复扣 Token。</p>
+        </details>
+        <details>
+          <summary>我的网页内容会被上传吗？</summary>
+          <p>插件没有自己的服务器。只有你按下翻译或总结时，对应的文字才会直接发给你在设置里填写的那个服务商。</p>
+        </details>
+        <details>
+          <summary>为什么不在应用商店上架？</summary>
+          <p>目前以开源方式发布，通过「加载解压缩的扩展」安装，代码完全可见。更新时重新下载并在扩展页点「重新加载」即可。</p>
+        </details>
+        <details>
+          <summary>翻译乱了页面怎么办？</summary>
+          <p>再按一次 <kbd>Alt</kbd><kbd>Shift</kbd><kbd>T</kbd> 或在弹窗里再点一次「翻译整个页面」，页面立即还原，不需要刷新。</p>
+        </details>
       </div>
     </div>
   </section>
@@ -313,17 +291,15 @@
 
 <footer class="footer">
   <div class="wrap footer__inner">
-    <div class="footer__brand">
-      <img src="icons/icon48.png" alt="" width="26" height="26" decoding="async">
-      <span>AI 翻译助手</span>
-      <span class="footer__ver mono">v1.3.1</span>
-    </div>
-    <p class="footer__note">本页为静态宣传站点。插件不收集、不上报任何数据；API Key 保存在本机浏览器中，翻译历史与用量统计也只存在本地。</p>
-    <div class="footer__links">
+    <p class="footer__brand">
+      <img src="icons/icon48.png" alt="" width="24" height="24" decoding="async">
+      <span>AI 翻译助手</span><span class="footer__ver">v1.3.1</span>
+    </p>
+    <nav class="footer__links" aria-label="页脚链接">
       <a href="https://github.com/Cloudto1/ai-translator-extension" target="_blank" rel="noopener noreferrer">GitHub 仓库</a>
-      <a href="https://github.com/Cloudto1/ai-translator-extension/archive/refs/heads/main.zip">下载扩展 ZIP</a>
+      <a href="https://github.com/Cloudto1/ai-translator-extension/archive/refs/heads/main.zip">下载 ZIP</a>
       <a href="#top">回到顶部</a>
-    </div>
+    </nav>
   </div>
 </footer>
 

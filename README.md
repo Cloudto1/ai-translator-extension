@@ -84,8 +84,11 @@ src/
   content/content.js              页面内 UI（Shadow DOM）、三种功能实现
   popup/                          配置与快捷操作弹窗
   options/                        管理面板（统计 / 记录 / 语言 / API）
-icons/                            图标
+icons/                            图标（icon.svg 为唯一源文件，PNG 由 tools/build-icons.mjs 生成）
+docs/                             官网（GitHub Pages 只发布此目录）
+tools/build-icons.mjs             由 icons/icon.svg 生成扩展与官网的 PNG 图标
 tests/
+  site.test.mjs                   官网验收（加载 / 布局 / 交互 / 对比度 / 图标）
   unit.test.mjs                   离线单元测试
   robustness.test.mjs             离线回归测试（鉴权 / API 容错 / 失败处理，全部桩 fetch）
   integration.test.mjs            真实 API 集成测试
@@ -108,9 +111,10 @@ npm install          # 安装测试依赖（playwright）
 npm test             # 单元测试 + 真实 API 集成测试
 npm run test:unit    # 仅离线单元测试
 npm run test:e2e     # 在真实 Edge 中加载扩展跑端到端测试
+npm run test:site    # 在 Edge 中验收官网（docs/）
 ```
 
-测试规模：**68 项离线测试 + 18 项真实 API 集成测试 + 40 项 Edge 端到端测试**。
+测试规模：**68 项离线测试 + 18 项真实 API 集成测试 + 40 项 Edge 端到端测试 + 21 项官网验收测试**。
 
 测试使用的 API 配置可通过环境变量覆盖：`AIT_API_KEY`、`AIT_BASE_URL`、`AIT_MODEL`。
 E2E 测试会自动启动本地站点、在真实 Edge 中加载扩展，覆盖 popup 配置、整页翻译与恢复原文、双语对照、划词翻译（中英双向）、自动划词、网页总结、未配置提示、popup → 后台 → 内容脚本全链路，以及管理面板的统计渲染、语言切换、连接测试、历史记录实时更新、筛选搜索删除与面板入口，截图输出到 `tests/.artifacts/`。

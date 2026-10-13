@@ -111,18 +111,13 @@ body {
   padding: var(--space-lg) var(--space-xl) var(--space-md);
 }
 
+/* 品牌标：直接用扩展图标 PNG，与工具栏 / 官网同源（icons/icon.svg）*/
 .logo {
+  display: block;
   width: 34px;
   height: 34px;
   flex: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--primary-soft), var(--primary));
-  color: var(--on-primary);
-  font-size: 16px;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 4px 12px var(--primary-glow);
 }
 
 .brand h1 {
