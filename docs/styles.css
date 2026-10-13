@@ -5,38 +5,46 @@
    —— 与 popup / options / 页内浮层同一套品牌色、字体与圆角
    ========================================================= */
 
-/* ---------- tokens ---------- */
-:root {
-  /* 全站单一深色主题（取 MASTER.md §1 的深色取值）*/
-  color-scheme: dark;
+/* ---------- 字体：自托管，零外部请求 ---------- */
+/* 可变字体 latin 子集，单文件覆盖 400–700 全部字重；汉字走下面的系统 CJK 回退。
+   不走 Google Fonts CDN：与扩展本体的"不收集、不上报"承诺一致，也免去首屏外联开销。 */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  /* 该文件是可变字体，实际覆盖 200–800；声明范围过窄会把 800（hero 标题）压回 700 */
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('fonts/PlusJakartaSans-latin-var.woff2') format('woff2');
+}
 
-  /* 品牌色 */
-  --primary:       #22B8CF;
-  --primary-hover: #3DCADD;
-  --primary-soft:  #67E8F9;
-  --primary-weak:  rgba(34, 184, 207, .16);
-  --primary-glow:  rgba(34, 184, 207, .30);
-  --on-primary:    #06232A;
+/* ---------- tokens ---------- */
+/* 浅色为默认、深色由 prefers-color-scheme 覆盖 —— 与扩展本体（popup / options）同一套逻辑，
+   不再全站强制深色。 */
+:root {
+  color-scheme: light dark;
+
+  /* 品牌色（浅色，MASTER.md §1）*/
+  --primary:       #0E7490;
+  --primary-hover: #0B5F78;
+  --primary-soft:  #0891B2;
+  --primary-weak:  rgba(14, 116, 144, .12);
+  --on-primary:    #FFFFFF;
 
   /* 中性色 */
-  --bg:      #14161D;
-  --bg-rgb:  20 22 29;
-  --surface: #1B1E27;
-  --text:    #E5E7EB;
-  --muted:   #9AA3B2;
-  --border:  rgba(148, 163, 184, .22);
+  --bg:      #F8FAFC;
+  --surface: #FFFFFF;
+  --text:    #0F172A;
+  --muted:   #475569;
+  --border:  #E2E8F0;
 
   /* 阴影（MASTER.md §3：全站只用两种强度）*/
-  --shadow:         0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .4);
-  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .35);
-
-  /* 品牌渐变（标题字用「近白 → 亮青」）*/
-  --brand-gradient: linear-gradient(100deg, #F0FDFF 0%, #A5F3FC 30%, #22B8CF 100%);
+  --shadow:         0 1px 2px rgba(15, 23, 42, .06), 0 8px 24px rgba(15, 23, 42, .06);
+  --shadow-overlay: 0 12px 32px rgba(15, 23, 42, .16), 0 2px 8px rgba(15, 23, 42, .08);
 
   /* 字体（MASTER.md §2）*/
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI',
                'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  --font-mono: ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
 
   /* 圆角（MASTER.md §3）*/
   --radius-xs:   6px;
@@ -52,6 +60,27 @@
   /* 动效（MASTER.md §6：悬停 120-140ms）*/
   --ease-hover: .14s ease;
   --ease-panel: .18s ease-out;
+}
+
+/* 深色主题（MASTER.md §1 深色取值）—— 与 popup / options 用同一个系统偏好分支，
+   不再由落地页单方面强制深色 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary:       #22B8CF;
+    --primary-hover: #3DCADD;
+    --primary-soft:  #67E8F9;
+    --primary-weak:  rgba(34, 184, 207, .16);
+    --on-primary:    #06232A;
+
+    --bg:      #14161D;
+    --surface: #1B1E27;
+    --text:    #E5E7EB;
+    --muted:   #9AA3B2;
+    --border:  rgba(148, 163, 184, .22);
+
+    --shadow:         0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .4);
+    --shadow-overlay: 0 12px 32px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .35);
+  }
 }
 
 /* ---------- reset ---------- */
@@ -110,7 +139,8 @@ code, kbd { font-family: var(--font-mono); }
   stroke-linejoin: round;
 }
 
-::selection { background: rgba(34, 184, 207, .3); }
+/* 选中高亮跟随品牌色，浅色 / 深色各自成立，不再硬编码单一青值 */
+::selection { background: color-mix(in srgb, var(--primary) 28%, transparent); }
 
 :focus-visible {
   outline: 2px solid var(--primary);
@@ -144,13 +174,11 @@ code, kbd { font-family: var(--font-mono); }
   letter-spacing: .01em;
 }
 
-/* 眉标：章节标题上方的小胶囊（深浅两套主题共用同一套令牌）*/
+/* 眉标：章节标题上方的小标签（文本本身已足够，不再挂装饰性图标）*/
 .eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
+  display: inline-block;
   margin-bottom: clamp(16px, 2vw, 22px);
-  padding: 5px 13px 5px 11px;
+  padding: 5px 13px;
   font-size: .78rem;
   font-weight: 600;
   line-height: 1.5;
@@ -159,7 +187,6 @@ code, kbd { font-family: var(--font-mono); }
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
 }
-.eyebrow__icon { width: 13px; height: 13px; }
 
 /* 图标块：功能区与兼容区的图标底座 */
 .icon-tile {
@@ -174,19 +201,6 @@ code, kbd { font-family: var(--font-mono); }
   border-radius: var(--radius-md);
 }
 .icon-tile .icon { width: 21px; height: 21px; }
-
-.grid-bg {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(148, 163, 184, .10) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, .10) 1px, transparent 1px);
-  background-size: 72px 72px;
-  /* 用居中的椭圆遮罩：网格在上下边界处正好衰减为 0，不与相邻区块产生接缝 */
-  -webkit-mask-image: radial-gradient(120% 62% at 50% 48%, #000 18%, transparent 74%);
-  mask-image: radial-gradient(120% 62% at 50% 48%, #000 18%, transparent 74%);
-}
 
 .btn {
   display: inline-flex;
@@ -204,11 +218,11 @@ code, kbd { font-family: var(--font-mono); }
   transition: background-color var(--ease-hover), border-color var(--ease-hover),
               color var(--ease-hover), transform var(--ease-hover);
 }
-/* 主按钮 —— 文字走 --on-primary：浅底白字 / 深底深字（MASTER.md §4）*/
+/* 主按钮 —— 文字走 --on-primary：浅底白字 / 深底深字（MASTER.md §4）
+   注意：不带发光阴影，全站阴影只用 --shadow / --shadow-overlay 两档 */
 .btn--signal {
   background: var(--primary);
   color: var(--on-primary);
-  box-shadow: 0 10px 26px -12px var(--primary-glow);
 }
 .btn--signal:hover { background: var(--primary-hover); transform: translateY(-1px); }
 .btn--ghost { color: var(--text); border-color: var(--border); }
@@ -247,10 +261,10 @@ kbd {
   border-bottom: 1px solid transparent;
   transition: background-color .3s ease, border-color .3s ease;
 }
+/* 滚动后浮出底色：用实色而非毛玻璃 —— 半透明模糊是"AI 落地页"的标配观感，
+   且 sticky 顶栏每次滚动都要重新合成一次模糊，成本换不来收益 */
 .topbar.is-stuck {
-  background: rgb(var(--bg-rgb) / 85%);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  background: var(--surface);
   border-bottom-color: var(--border);
 }
 
@@ -337,9 +351,7 @@ kbd {
     gap: 4px;
     margin: 0;
     padding: 10px var(--gutter) 18px;
-    background: rgb(var(--bg-rgb) / 97%);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    background: var(--surface);
     border-bottom: 1px solid var(--border);
     display: none;
   }
@@ -359,25 +371,6 @@ kbd {
   background: var(--bg);
   color: var(--text);
   padding-block: clamp(52px, 8vw, 96px) clamp(64px, 10vw, 128px);
-}
-/* 首屏装饰层：整体上下淡出，避免光晕被 overflow 切出硬边接缝 */
-.hero__aura {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 15%, #000 72%, transparent 100%);
-  mask-image: linear-gradient(180deg, transparent 0, #000 15%, #000 72%, transparent 100%);
-}
-.hero__glow {
-  position: absolute;
-  left: 50%;
-  top: -440px;
-  width: 900px;
-  height: 900px;
-  transform: translateX(-50%);
-  background: radial-gradient(circle, var(--primary-glow), rgba(34, 184, 207, 0) 62%);
-  filter: blur(24px);
-  pointer-events: none;
 }
 
 .hero__inner {
@@ -406,28 +399,8 @@ kbd {
   letter-spacing: .005em;
   color: var(--muted);
 }
-.hero__sweep {
-  display: block;
-  height: 1px;
-  max-width: 360px;
-  margin: 0 0 .9em;
-  background: linear-gradient(90deg, var(--primary), transparent);
-  transform: scaleX(0);
-  transform-origin: left;
-}
+/* 标题用实色 —— 渐变字是"AI 生成感"的典型指纹，且会把品牌色从色板里单拎出来 */
 .hero__result { display: block; color: var(--text); }
-
-/* 标题渐变字挂在内层：外层仍在跑 clip-path 揭示动效，两者同元素会互相干扰 */
-.hero__result-text { display: inline-block; }
-@supports ((background-clip: text) or (-webkit-background-clip: text)) {
-  .hero__result-text {
-    background-image: var(--brand-gradient);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-  }
-}
 
 .hero__lead {
   max-width: 52ch;
@@ -499,7 +472,7 @@ kbd {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: rgba(148, 163, 184, .4);
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
 }
 .mock__bar i:first-child { background: var(--primary); }
 .mock__url {
@@ -573,17 +546,6 @@ kbd {
 }
 .section--tight { padding-block: clamp(52px, 7vw, 88px); }
 .section[id] { scroll-margin-top: 84px; }
-
-/* 全站同一深色底，靠极淡的品牌色辉光制造纵深，避免中段发平 */
-#features::before,
-#compat::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background: radial-gradient(62% 42% at 50% 40%, rgba(34, 184, 207, .12), rgba(34, 184, 207, 0) 74%);
-}
 
 .h2 {
   font-size: clamp(1.85rem, 3.6vw, 2.9rem);
@@ -1037,46 +999,15 @@ kbd {
 .footer__links a:hover { border-bottom-color: var(--primary); }
 
 /* =========================================================
-   首屏编排动效（全站唯一一处非交互动效）
+   首屏：不做入场编排
    ========================================================= */
-.hero__source,
-.hero__lead,
-.hero__actions,
-.hero__keys,
-.hero__visual {
-  opacity: 0;
-  transform: translateY(12px);
-  animation: rise .7s cubic-bezier(.2, .7, .2, 1) forwards;
-}
-.hero__source { animation-delay: .08s; }
-.hero__visual { animation-duration: .9s; animation-delay: .3s; }
-.hero__lead    { animation-delay: .72s; }
-.hero__actions { animation-delay: .84s; }
-.hero__keys    { animation-delay: .96s; }
-
-.hero__kicker {
-  opacity: 0;
-  animation: rise .6s ease-out .02s forwards;
-}
-
-.hero__sweep {
-  animation: sweep .6s cubic-bezier(.3, .8, .2, 1) .46s forwards;
-}
-
-.hero__result {
-  clip-path: inset(0 100% 0 0);
-  animation: reveal .85s cubic-bezier(.24, .78, .2, 1) .58s forwards;
-}
-
-@keyframes rise {
-  to { opacity: 1; transform: none; }
-}
-@keyframes sweep {
-  to { transform: scaleX(1); }
-}
-@keyframes reveal {
-  to { clip-path: inset(0 0 0 0); }
-}
+/* 原先是一套 0.02s → 0.96s 的阶梯编排：逐条上浮 + 标题 clip-path 揭示 + 扫光条。
+   那类动画不传递任何信息，只是让用户"等动画放完"，是落地页模板的典型特征。
+   这里选择整块删除，而不是换成更短的淡入 —— 首屏内容不应该依赖动画的终态才"显形"：
+   只要动画因为任何原因没有执行（低性能设备、截图、脚本中断），以 opacity: 0 起手的
+   内容就真的不可见。
+   注意：原 .hero__result 上还挂着 clip-path: inset(0 100% 0 0)，只删 keyframes 而留着它，
+   标题会被永久隐藏，所以必须一并清掉。 */
 
 /* 尊重"减少动态效果" */
 @media (prefers-reduced-motion: reduce) {

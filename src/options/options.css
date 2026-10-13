@@ -90,7 +90,9 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+  /* 拉丁字形用自托管的 Plus Jakarta Sans（见 src/styles/fonts.css），汉字回退系统 CJK */
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
   line-height: 1.6;
 }

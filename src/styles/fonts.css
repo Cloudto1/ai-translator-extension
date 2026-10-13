@@ -1,0 +1,19 @@
+/**
+ * Plus Jakarta Sans —— 自托管，零外部请求。
+ *
+ * 为什么不走 Google Fonts CDN：
+ * 1. 隐私叙事一致性 —— 本扩展对外承诺"不收集、不上报"，却在页面加载时请求第三方字体服务，是自相矛盾的；
+ * 2. MV3 扩展页的 CSP 下应尽量不自外联；落地页同理，避免首屏 FOUT 与额外 DNS/TLS 开销；
+ * 3. 扩展本体与落地页共用同一份文件，杜绝两套字体来源各自漂移。
+ *
+ * 该文件是可变字体（variable font）的 latin 子集，单个 27 KB 文件覆盖 400–700 全部字重，
+ * 因此只需一条 @font-face，不要按字重拆成四个文件。
+ * 汉字不在其覆盖范围内，由各处的系统 CJK 回退栈承担（PingFang SC / 微软雅黑）。
+ */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('../../fonts/PlusJakartaSans-latin-var.woff2') format('woff2');
+}

@@ -3,14 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#14161D">
+<!-- 主题色随系统：浅色 / 深色各一条，与 styles.css 的令牌对应 -->
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F8FAFC">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#14161D">
 <title>AI 翻译助手 · 把整个网页，翻译成你的语言</title>
 <meta name="description" content="一款基于大模型的浏览器翻译扩展：全页面翻译、划词翻译、网页总结。兼容任意 OpenAI 协议服务，API Key 由你掌控，插件不收集任何数据。">
 <link rel="icon" type="image/png" sizes="48x48" href="icons/icon48.png">
 <link rel="apple-touch-icon" href="icons/icon128.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -37,10 +36,6 @@
     <path d="M12 8v8" />
     <path d="M9.5 8h5" />
     <path d="M9.5 16h5" />
-  </symbol>
-  <symbol id="i-sparkle" viewBox="0 0 24 24">
-    <path d="M12 4l1.6 4.4L18 10l-4.4 1.6L12 16l-1.6-4.4L6 10l4.4-1.6z" />
-    <path d="M18.5 15.6l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7z" />
   </symbol>
   <symbol id="i-lock" viewBox="0 0 24 24">
     <rect x="4.5" y="10.5" width="15" height="9.5" rx="2.5" />
@@ -71,18 +66,13 @@
 
   <!-- ============ HERO ============ -->
   <section class="hero" id="top">
-    <div class="grid-bg" aria-hidden="true"></div>
-    <div class="hero__aura" aria-hidden="true">
-      <div class="hero__glow"></div>
-    </div>
     <div class="wrap hero__inner">
       <div class="hero__copy">
-        <p class="eyebrow hero__kicker"><svg class="icon eyebrow__icon" aria-hidden="true"><use href="#i-sparkle" /></svg>AI 驱动 · 兼容 OpenAI 协议</p>
+        <p class="eyebrow hero__kicker">AI 驱动 · 兼容 OpenAI 协议</p>
 
         <h1 class="hero__title">
           <span class="hero__source">Translate the whole page.</span>
-          <span class="hero__sweep" aria-hidden="true"></span>
-          <span class="hero__result"><span class="hero__result-text">把整个网页，翻译成你的语言</span></span>
+          <span class="hero__result">把整个网页，翻译成你的语言</span>
         </h1>
 
         <p class="hero__lead">一款基于大模型的浏览器翻译扩展。整页翻译、划词翻译、网页总结，一个插件全部搞定——而且只在你说要翻的时候，才把你的文字发给你自己配置的模型服务。</p>
@@ -127,7 +117,7 @@
   <section class="section" id="intro">
     <div class="wrap split">
       <div class="split__head">
-        <p class="eyebrow"><svg class="icon eyebrow__icon" aria-hidden="true"><use href="#i-sparkle" /></svg>产品介绍</p>
+        <p class="eyebrow">产品介绍</p>
         <h2 class="h2">它是什么</h2>
         <p class="split__en mono">What it is</p>
       </div>
@@ -154,10 +144,9 @@
 
   <!-- ============ FEATURES ============ -->
   <section class="section" id="features">
-    <div class="grid-bg" aria-hidden="true"></div>
     <div class="wrap">
       <header class="sec-head sec-head--center">
-        <p class="eyebrow"><svg class="icon eyebrow__icon" aria-hidden="true"><use href="#i-sparkle" /></svg>核心功能</p>
+        <p class="eyebrow">核心功能</p>
         <h2 class="h2">三种翻译方式，覆盖所有场景</h2>
         <p class="sec-head__en mono">Three ways to read</p>
         <p class="sec-head__lead">无论是通读整篇外文文章、随手查一个词，还是先判断长文值不值得读，都能一步完成。</p>
@@ -249,7 +238,7 @@
   <section class="section" id="install">
     <div class="wrap">
       <header class="sec-head sec-head--center">
-        <p class="eyebrow"><svg class="icon eyebrow__icon" aria-hidden="true"><use href="#i-sparkle" /></svg>安装指南</p>
+        <p class="eyebrow">安装指南</p>
         <h2 class="h2">四步装好，不用注册</h2>
         <p class="sec-head__en mono">Install</p>
         <p class="sec-head__lead">下载解压、加载到浏览器、填一次 API 配置即可。Edge 与 Chrome 110 及以上版本都支持。</p>
@@ -295,7 +284,7 @@
   <section class="section section--tight" id="compat">
     <div class="wrap">
       <header class="sec-head sec-head--center">
-        <p class="eyebrow"><svg class="icon eyebrow__icon" aria-hidden="true"><use href="#i-sparkle" /></svg>兼容性</p>
+        <p class="eyebrow">兼容性</p>
         <h2 class="h2">接你自己的模型服务</h2>
         <p class="sec-head__en mono">Compatibility</p>
       </header>
