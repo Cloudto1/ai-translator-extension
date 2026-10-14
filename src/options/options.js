@@ -2,7 +2,7 @@
  * 管理面板：API 配置 / 语言切换 / 翻译历史 / Token 统计。
  */
 
-import { LANGUAGES, DEFAULT_SETTINGS, validateSettings } from '../lib/config.js';
+import { LANGUAGES, DEFAULT_SETTINGS, validateSettings, canonicalShortcut, shortcutFromEvent } from '../lib/config.js';
 import {
   getSettings,
   saveSettings,
@@ -175,6 +175,7 @@ function fillForm() {
 
   renderLangHint();
   renderPageLimitHint();
+  renderShortcutButtons();
 }
 
 /** 打开「不设上限」后就不再需要填数字，同时说明两种模式的行为差异。 */
@@ -574,6 +575,23 @@ function bindEvents() {
   });
 
   els.testBtn.addEventListener('click', testConnection);
+  document.getElementById('resetShortcuts')?.addEventListener('click', () => {
+    recordingShortcut = null;
+    persist({
+      shortcutPage: DEFAULT_SETTINGS.shortcutPage,
+      shortcutSummarize: DEFAULT_SETTINGS.shortcutSummarize,
+      shortcutSelection: DEFAULT_SETTINGS.shortcutSelection,
+    });
+    renderShortcutButtons();
+    toast('已恢复默认快捷键，刷新正在看的网页后生效');
+  });
+  for (const btn of document.querySelectorAll('[data-shortcut]')) {
+    btn.addEventListener('click', () => {
+      recordingShortcut = btn.dataset.shortcut;
+      renderShortcutButtons();
+    });
+  }
+  window.addEventListener('keydown', onShortcutRecord, true);
 
   els.resetBtn.addEventListener('click', async () => {
     if (!window.confirm('确定要恢复默认设置吗？API Key 也会被清空。')) return;
@@ -606,6 +624,44 @@ function bindEvents() {
     fillForm();
     renderConnStatus();
   });
+}
+
+const SHORTCUT_FIELDS = ['shortcutPage', 'shortcutSummarize', 'shortcutSelection'];
+let recordingShortcut = null;
+
+function renderShortcutButtons() {
+  for (const btn of document.querySelectorAll('[data-shortcut]')) {
+    const field = btn.dataset.shortcut;
+    const recording = recordingShortcut === field;
+    btn.classList.toggle('is-recording', recording);
+    btn.textContent = recording ? '请按下新的快捷键…' : settings[field] ? settings[field].split('+').join(' + ') : '未设置';
+  }
+}
+
+function onShortcutRecord(event) {
+  if (!recordingShortcut) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.key === 'Escape') {
+    recordingShortcut = null;
+    renderShortcutButtons();
+    return;
+  }
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) return;
+  const chord = shortcutFromEvent(event);
+  if (!chord || canonicalShortcut(chord) !== chord) {
+    toast('需要带上 Alt 或 Ctrl');
+    return;
+  }
+  const field = recordingShortcut;
+  if (SHORTCUT_FIELDS.some((key) => key !== field && settings[key] === chord)) {
+    toast('这个快捷键已经用于另一项');
+    return;
+  }
+  recordingShortcut = null;
+  persist({ [field]: chord });
+  renderShortcutButtons();
+  toast('快捷键已保存。刷新正在看的网页后生效');
 }
 
 async function init() {

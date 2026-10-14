@@ -1,22 +1,25 @@
 :root {
   color-scheme: dark;
-  /* 与官网同一套靛蓝，只作主操作和焦点，不再铺满每一张卡片 */
-  --primary: #4f5fe8;
-  --primary-hover: #6270f0;
-  --primary-fg: #c5cbff;
-  --primary-soft: #d5d9ff;
-  --primary-weak: rgba(79, 95, 232, 0.16);
+  /* 与官网 docs/styles.css 同一套：深靛灰底、靛蓝主色、浅靛蓝点缀、琥珀只作状态 */
+  --primary: #4856e0;
+  --primary-hover: #5a68ee;
+  --primary-fg: #a9b3ff;
+  --primary-soft: #bcc4ff;
+  --primary-weak: rgba(72, 86, 224, 0.16);
   --on-primary: #ffffff;
 
-  --bg: #10131a;
-  --surface: #181c27;
-  --text: #f3f4f8;
-  --muted: #b7bdce;
-  --faint: #8b93a7;
-  --border: #2a3142;
-  --ok: #5dcca0;
-  --err: #ff9b8c;
-  --warn: #fbbf24;
+  --bg: #0e1016;
+  --bg-alt: #141722;
+  --surface: #1a1e2b;
+  --seg: #2c3350;
+  --text: #ecedf3;
+  --muted: #a4a9ba;
+  --faint: #a4a9ba;
+  --border: #272c3c;
+  --border-strong: #394058;
+  --ok: #4fd08f;
+  --err: #ff8f7d;
+  --accent: #ffc857;
 
   --space-xs: 2px;
   --space-sm: 4px;
@@ -134,7 +137,7 @@ body {
 
 .status.is-ok {
   color: var(--ok);
-  background: rgba(93, 204, 160, 0.1);
+  background: rgba(79, 208, 143, 0.12);
 }
 
 .status.is-ok .dot {
@@ -146,7 +149,7 @@ body {
   max-width: none;
   margin-left: 38px;
   color: var(--err);
-  background: rgba(255, 155, 140, 0.1);
+  background: rgba(255, 143, 125, 0.12);
 }
 
 .status.is-err #statusText {
@@ -185,7 +188,7 @@ body {
 }
 
 .tab.is-active {
-  background: #262c3c;
+  background: var(--seg);
   color: var(--text);
 }
 
@@ -202,6 +205,61 @@ body {
 
 .panel.is-active {
   display: flex;
+}
+
+.page-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  min-height: 36px;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--font-label);
+  font-weight: 650;
+}
+
+.page-status .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex: none;
+}
+
+.page-status.is-off .dot {
+  background: var(--accent);
+}
+
+.page-status.is-on {
+  color: var(--ok);
+  background: rgba(79, 208, 143, 0.12);
+  border-color: rgba(79, 208, 143, 0.4);
+}
+
+.page-status.is-on .dot {
+  background: var(--ok);
+}
+
+.page-status.is-busy {
+  color: var(--primary-fg);
+  background: var(--primary-weak);
+  border-color: rgba(72, 86, 224, 0.45);
+}
+
+.page-status.is-busy .dot {
+  background: var(--primary-fg);
+}
+
+.page-status.is-na {
+  color: var(--muted);
+}
+
+.page-status.is-na .dot {
+  background: var(--faint);
 }
 
 .action {
@@ -244,7 +302,7 @@ body {
 }
 
 .action-list .action:hover {
-  background: #202636;
+  background: var(--seg);
 }
 
 .action:active {
@@ -309,7 +367,7 @@ button.ghost:focus-visible,
 }
 
 kbd {
-  background: #10131a;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 4px;
@@ -419,7 +477,7 @@ button.ghost {
 
 button.ghost:hover {
   color: var(--text);
-  border-color: #44506a;
+  border-color: var(--border-strong);
 }
 
 .row {
@@ -487,7 +545,7 @@ button.ghost:hover {
   width: 36px;
   height: 22px;
   border-radius: 999px;
-  background: #343b4e;
+  background: var(--border-strong);
   position: relative;
   flex: none;
   margin-left: auto;
@@ -581,8 +639,7 @@ button.ghost:hover {
 }
 
 .foot {
-  border-top: 1px solid var(--border);
-  padding: 4px 8px 6px;
+  padding: 2px 16px 8px;
 }
 
 .opt-link {
@@ -590,23 +647,29 @@ button.ghost:hover {
   align-items: center;
   gap: 10px;
   width: 100%;
+  min-height: 48px;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  padding: 8px 8px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-}
-
-.opt-link:hover {
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--text);
 }
 
-.opt-link .icon {
+.opt-link:hover {
+  border-color: var(--primary);
+  background: var(--seg);
+}
+
+.opt-link > .icon:first-of-type {
+  width: 28px;
+  height: 28px;
+  padding: 6px;
   flex: none;
+  border-radius: 8px;
+  background: var(--primary-weak);
   color: var(--primary-fg);
 }
 
@@ -619,20 +682,20 @@ button.ghost:hover {
 }
 
 .opt-link-text strong {
-  font-size: var(--font-label);
-  font-weight: 600;
+  font-size: var(--font-body);
+  font-weight: 650;
   color: var(--text);
 }
 
 .opt-link-text small {
   font-size: var(--font-hint);
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .opt-link-arrow {
-  width: 14px;
-  height: 14px;
-  color: var(--faint);
+  width: 16px;
+  height: 16px;
+  color: var(--primary-fg);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -92,13 +92,17 @@
           role="tabpanel"
           aria-labelledby="tab-actions"
         >
+          <p id="pageStatus" class="page-status" role="status">
+            <span class="dot" aria-hidden="true"></span>
+            <span id="pageStatusText">正在检查当前页面…</span>
+          </p>
           <button class="action action--primary" data-action="translate-page" type="button">
             <span class="action-icon" aria-hidden="true"><svg class="icon"><use href="#i-globe" /></svg></span>
             <span class="action-text">
               <strong>翻译整个页面</strong>
-              <small>再按一次恢复原文</small>
+              <small id="pageActionHint">翻译当前页面的正文</small>
             </span>
-            <span class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>T</kbd></span>
+            <span class="keys" id="keysPage"><kbd>Alt</kbd><kbd>Y</kbd></span>
           </button>
           <div class="action-list">
             <button class="action" data-action="summarize-page" type="button">
@@ -107,7 +111,7 @@
                 <strong>总结当前网页</strong>
                 <small>提炼要点与结论</small>
               </span>
-              <span class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></span>
+              <span class="keys" id="keysSummarize"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></span>
             </button>
             <button class="action" data-action="translate-selection" type="button">
               <span class="action-icon" aria-hidden="true"><svg class="icon"><use href="#i-selection" /></svg></span>
@@ -115,7 +119,7 @@
                 <strong>翻译选中文本</strong>
                 <small>先在页面上选中文字</small>
               </span>
-              <span class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>E</kbd></span>
+              <span class="keys" id="keysSelection"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>E</kbd></span>
             </button>
           </div>
 

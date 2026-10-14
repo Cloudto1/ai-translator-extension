@@ -516,8 +516,34 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   font-size: 13px;
   color: var(--muted);
+}
+
+.kv .keys {
+  flex: none;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.shortcut-btn {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.shortcut-btn:hover,
+.shortcut-btn.is-recording {
+  border-color: var(--primary);
+  color: var(--primary-fg);
 }
 
 /* ---------------- 语言设置 ---------------- */

@@ -8,6 +8,8 @@ import {
   normalizeSettings,
   validateSettings,
   DEFAULT_SETTINGS,
+  canonicalShortcut,
+  shortcutFromEvent,
 } from '../src/lib/config.js';
 import {
   detectLanguage,
@@ -413,6 +415,16 @@ test('normalizeSettings 处理整页翻译上限与「不设上限」开关', ()
   assert.equal(normalizeSettings({ pageTranslateUnlimited: true }).pageTranslateUnlimited, true);
   assert.equal(normalizeSettings({ pageTranslateUnlimited: 'on' }).pageTranslateUnlimited, true);
   assert.equal(normalizeSettings({ pageTranslateUnlimited: false }).pageTranslateUnlimited, false);
+  assert.equal(normalizeSettings({}).shortcutPage, 'Alt+Y');
+  assert.equal(canonicalShortcut('alt+y'), 'Alt+Y');
+  assert.equal(canonicalShortcut('ctrl+shift+s'), 'Ctrl+Shift+S');
+  assert.equal(canonicalShortcut('shift+y'), null);
+  assert.equal(canonicalShortcut(''), '');
+  assert.equal(shortcutFromEvent({ key: 'y', altKey: true, ctrlKey: false, shiftKey: false, metaKey: false }), 'Alt+Y');
+  assert.equal(
+    normalizeSettings({ shortcutPage: 'Alt+Shift+S', shortcutSummarize: 'alt+shift+s' }).shortcutSummarize,
+    '',
+  );
 });
 
 test('normalizeUsage / mergeUsage 归一化各家用量格式', () => {

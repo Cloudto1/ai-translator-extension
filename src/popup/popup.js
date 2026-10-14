@@ -6,6 +6,9 @@ const $ = (id) => document.getElementById(id);
 const els = {
   status: $('status'),
   statusText: $('statusText'),
+  pageStatus: $('pageStatus'),
+  pageStatusText: $('pageStatusText'),
+  pageActionHint: $('pageActionHint'),
   tabs: $('tabs'),
   sourceLang: $('sourceLang'),
   targetLang: $('targetLang'),
@@ -143,6 +146,56 @@ function onTabKeydown(event) {
 
   event.preventDefault();
   switchTab(tabs[next].dataset.tab, { focus: true });
+}
+
+const PAGE_HINT = {
+  off: '翻译当前页面的正文',
+  on: '再按一次恢复原文',
+  busy: '这一页正在翻译',
+  na: '请换到普通网页再试',
+};
+
+function setPageStatus(kind, text) {
+  els.pageStatus.className = `page-status is-${kind}`;
+  els.pageStatusText.textContent = text;
+  els.pageActionHint.textContent = PAGE_HINT[kind] || PAGE_HINT.off;
+}
+
+/** 浏览器内置页、扩展商店等页面注入不了内容脚本。 */
+function isUnsupportedPage(url) {
+  if (!url) return false;
+  if (/^(chrome|edge|about|devtools|view-source|chrome-extension|edge-extension):/i.test(url)) return true;
+  return /^https:\/\/(chromewebstore\.google\.com|microsoftedge\.microsoft\.com\/addons)/i.test(url);
+}
+
+async function askPageStatus(tabId) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: MSG.GET_PAGE_STATUS });
+  } catch {
+    // 内容脚本可能还在 document_idle 注入，等一下再问一次
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return chrome.tabs.sendMessage(tabId, { type: MSG.GET_PAGE_STATUS });
+  }
+}
+
+async function refreshPageStatus() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      setPageStatus('na', '未找到当前页面');
+      return;
+    }
+    if (isUnsupportedPage(tab.url)) {
+      setPageStatus('na', '当前页面不支持翻译');
+      return;
+    }
+    const res = await askPageStatus(tab.id);
+    if (res?.running) setPageStatus('busy', '正在翻译');
+    else if (res?.translated) setPageStatus('on', '已翻译');
+    else setPageStatus('off', '未翻译');
+  } catch {
+    setPageStatus('off', '未翻译');
+  }
 }
 
 async function runOnActiveTab(command, text) {
@@ -283,6 +336,34 @@ async function init() {
   bindEvents();
   const errors = renderStatus();
   if (errors.length > 0) switchTab('settings');
+  refreshPageStatus();
+  renderShortcutKeys();
+}
+
+function renderPopupKeys(el, shortcut) {
+  if (!el) return;
+  el.replaceChildren();
+  const parts = String(shortcut || '')
+    .split('+')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) {
+    const kbd = document.createElement('kbd');
+    kbd.textContent = '未设置';
+    el.append(kbd);
+    return;
+  }
+  for (const part of parts) {
+    const kbd = document.createElement('kbd');
+    kbd.textContent = part;
+    el.append(kbd);
+  }
+}
+
+function renderShortcutKeys() {
+  renderPopupKeys(document.getElementById('keysPage'), settings.shortcutPage);
+  renderPopupKeys(document.getElementById('keysSummarize'), settings.shortcutSummarize);
+  renderPopupKeys(document.getElementById('keysSelection'), settings.shortcutSelection);
 }
 
 init();

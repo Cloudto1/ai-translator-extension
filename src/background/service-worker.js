@@ -168,18 +168,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-chrome.commands?.onCommand.addListener(async (command) => {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) return;
-    if (command === 'translate-page') await notifyTab(tab.id, { type: MSG.CMD_TRANSLATE_PAGE });
-    if (command === 'summarize-page') await notifyTab(tab.id, { type: MSG.CMD_SUMMARIZE_PAGE });
-    if (command === 'translate-selection') await notifyTab(tab.id, { type: MSG.CMD_TRANSLATE_SELECTION });
-  } catch (err) {
-    console.warn('[AI翻译] 快捷键处理失败：', err);
-  }
-});
-
 /* ------------------------------------------------------------------ */
 /* 一次性消息（popup / content）                                       */
 /* ------------------------------------------------------------------ */
@@ -475,6 +463,7 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 
   port.onDisconnect.addListener(() => {
+    void chrome.runtime.lastError;
     for (const controller of controllers.values()) {
       try {
         controller.abort();

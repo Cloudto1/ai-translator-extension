@@ -34,19 +34,5 @@
     }
   ],
   "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
-  "host_permissions": ["<all_urls>"],
-  "commands": {
-    "translate-page": {
-      "suggested_key": { "default": "Alt+Shift+T" },
-      "description": "翻译整个页面"
-    },
-    "summarize-page": {
-      "suggested_key": { "default": "Alt+Shift+S" },
-      "description": "总结当前网页"
-    },
-    "translate-selection": {
-      "suggested_key": { "default": "Alt+Shift+E" },
-      "description": "翻译选中文本"
-    }
-  }
+  "host_permissions": ["<all_urls>"]
 }

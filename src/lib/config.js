@@ -23,7 +23,60 @@ export const DEFAULT_SETTINGS = Object.freeze({
   pageMode: 'replace', // replace（替换原文） | bilingual（双语对照）
   summaryLength: 'medium', // short | medium | detailed
   historyLimit: 300, // 本地翻译历史最多保留条数
+  // 页面内快捷键。浏览器不允许扩展改写系统快捷键，所以由内容脚本自己监听。
+  // 空字符串表示关闭这一项。
+  shortcutPage: 'Alt+Y',
+  shortcutSummarize: 'Alt+Shift+S',
+  shortcutSelection: 'Alt+Shift+E',
 });
+
+const SHORTCUT_FIELDS = ['shortcutPage', 'shortcutSummarize', 'shortcutSelection'];
+
+/**
+ * 把快捷键收成稳定写法：Ctrl、Alt、Shift、Command 在前，主键在最后。
+ * 必须带 Ctrl、Alt 或 Command，避免单键抢走正常输入。
+ * 空字符串表示关闭；格式不对返回 null。
+ */
+export function canonicalShortcut(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const mods = new Set();
+  let key = '';
+  for (const part of text.split('+')) {
+    const token = part.trim();
+    if (!token) continue;
+    const lower = token.toLowerCase();
+    if (lower === 'ctrl' || lower === 'control') mods.add('Ctrl');
+    else if (lower === 'alt' || lower === 'option') mods.add('Alt');
+    else if (lower === 'shift') mods.add('Shift');
+    else if (lower === 'command' || lower === 'meta' || lower === 'cmd') mods.add('Command');
+    else if (!key) key = token.length === 1 ? token.toUpperCase() : token;
+    else return null;
+  }
+  if (!key || ['Control', 'Ctrl', 'Alt', 'Shift', 'Meta', 'Command'].includes(key)) return null;
+  if (!mods.has('Ctrl') && !mods.has('Alt') && !mods.has('Command')) return null;
+  const ordered = [];
+  for (const name of ['Ctrl', 'Alt', 'Shift', 'Command']) {
+    if (mods.has(name)) ordered.push(name);
+  }
+  ordered.push(key === ' ' ? 'Space' : key);
+  return ordered.join('+');
+}
+
+/** 与 canonicalShortcut 使用同一套按键名，供页面监听时比对。 */
+export function shortcutFromEvent(event) {
+  const raw = event?.key;
+  if (!raw || raw === 'Dead' || raw === 'Unidentified' || raw === 'Process') return '';
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(raw)) return '';
+  if (!event.ctrlKey && !event.altKey && !event.metaKey) return '';
+  const parts = [];
+  if (event.ctrlKey) parts.push('Ctrl');
+  if (event.altKey) parts.push('Alt');
+  if (event.shiftKey) parts.push('Shift');
+  if (event.metaKey) parts.push('Command');
+  parts.push(raw === ' ' ? 'Space' : raw.length === 1 ? raw.toUpperCase() : raw);
+  return parts.join('+');
+}
 
 export const RUNTIME_LIMITS = Object.freeze({
   // 分批上限受「模型输出 token」约束，而非输入长度。
@@ -101,6 +154,14 @@ export function normalizeSettings(raw) {
       ? Math.min(Math.round(pageLimit), 50000)
       : DEFAULT_SETTINGS.pageTranslateLimit;
   s.pageTranslateUnlimited = isTruthy(s.pageTranslateUnlimited);
+  const usedShortcuts = new Set();
+  for (const field of SHORTCUT_FIELDS) {
+    const chord = canonicalShortcut(s[field]);
+    let next = chord === null ? DEFAULT_SETTINGS[field] : chord;
+    if (next && usedShortcuts.has(next)) next = '';
+    s[field] = next;
+    if (next) usedShortcuts.add(next);
+  }
   return s;
 }
 

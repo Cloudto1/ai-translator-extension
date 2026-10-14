@@ -30,6 +30,7 @@
     RUN_TRANSLATE_SELECTION: 'RUN_TRANSLATE_SELECTION',
     CACHE_CLEARED: 'CACHE_CLEARED',
     GET_STATE: 'GET_STATE',
+    GET_PAGE_STATUS: 'GET_PAGE_STATUS',
   };
 
   // 单轮「整页翻译」最多新收集多少处文本。一轮 = 一次请求，上限是为了让每次请求有界。
@@ -51,6 +52,15 @@
   let port = null;
   let seq = 0;
   const pending = new Map();
+
+  function failPending(message) {
+    const entries = [...pending.values()];
+    pending.clear();
+    for (const entry of entries) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error(message));
+    }
+  }
 
   function ensurePort() {
     if (port) return port;
@@ -77,15 +87,28 @@
       }
     });
     port.onDisconnect.addListener(() => {
+      // 必须读掉 lastError，否则浏览器会把断开记成「未检查的错误」
+      void chrome.runtime.lastError;
       port = null;
-      for (const entry of pending.values()) {
-        clearTimeout(entry.timer);
-        entry.reject(new Error('与后台连接已断开，请刷新页面后重试。'));
-      }
-      pending.clear();
+      failPending('与后台连接已断开，请刷新页面后重试。');
     });
     return port;
   }
+
+  // 页面进入往返缓存前自己断开长连接。等浏览器去掐，就会弹出
+  // “The page keeping the extension port is moved into back/forward cache”。
+  // 从缓存恢复后 port 已是 null，下次翻译会重新连接。
+  window.addEventListener('pagehide', () => {
+    const current = port;
+    if (!current) return;
+    port = null;
+    failPending('与后台连接已断开，请刷新页面后重试。');
+    try {
+      current.disconnect();
+    } catch {
+      /* 端口已经断开 */
+    }
+  });
 
   function startRequest(type, payload, handlers = {}) {
     const id = `r${Date.now().toString(36)}-${++seq}`;
@@ -167,6 +190,7 @@
     settingsCache = null;
     // 语言等设置可能被改过，旧译文不再可信，整块丢弃
     watchMemory = { lang: '', map: new Map() };
+    getSettings(true);
   });
 
   /* ---------------------------------------------------------------- */
@@ -1306,6 +1330,60 @@
     true,
   );
 
+  // 与 src/lib/config.js 的 shortcutFromEvent 保持同一套按键名。
+  // 浏览器不允许扩展改系统快捷键，所以在页面里自己听。
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.repeat || event.isComposing) return;
+      const raw = event.key;
+      if (!raw || raw === 'Dead' || raw === 'Unidentified' || raw === 'Process') return;
+      if (['Control', 'Alt', 'Shift', 'Meta'].includes(raw)) return;
+      if (!event.ctrlKey && !event.altKey && !event.metaKey) return;
+      const parts = [];
+      if (event.ctrlKey) parts.push('Ctrl');
+      if (event.altKey) parts.push('Alt');
+      if (event.shiftKey) parts.push('Shift');
+      if (event.metaKey) parts.push('Command');
+      parts.push(raw === ' ' ? 'Space' : raw.length === 1 ? raw.toUpperCase() : raw);
+      const chord = parts.join('+');
+      const current = settingsCache;
+      if (!current) return;
+      if (chord !== current.shortcutPage && chord !== current.shortcutSummarize && chord !== current.shortcutSelection) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (chord === current.shortcutPage) {
+        translatePage();
+        return;
+      }
+      if (chord === current.shortcutSummarize) {
+        summarizePageWithUI();
+        return;
+      }
+      const text = (window.getSelection()?.toString() || '').trim();
+      if (!text) {
+        toast('请先选中要翻译的文本。');
+        return;
+      }
+      getSettings(true).then(() => {
+        const selection = window.getSelection();
+        let rect = null;
+        try {
+          rect = selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
+        } catch {
+          rect = null;
+        }
+        if (!rect || (rect.width === 0 && rect.height === 0)) {
+          rect = { top: 80, bottom: 100, left: window.innerWidth / 2 - 190, width: 0, height: 0 };
+        }
+        openSelectionCard(rect, text.slice(0, 6000), { autoStarted: true });
+      });
+    },
+    true,
+  );
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const type = msg?.type;
     if (type === 'PING') {
@@ -1313,6 +1391,14 @@
       return true;
     }
     // 只读的翻译状态快照，供自检 / 排障观察「已译记录是否只增不减」
+    if (type === MSG.GET_PAGE_STATUS) {
+      sendResponse({
+        ok: true,
+        translated: pageState.active,
+        running: pageState.running,
+      });
+      return true;
+    }
     if (type === MSG.GET_STATE) {
       sendResponse({
         ok: true,

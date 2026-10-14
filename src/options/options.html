@@ -286,10 +286,21 @@
           <div class="card">
             <h3>快捷键</h3>
             <ul class="kv">
-              <li><span>翻译整个页面</span><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd></li>
-              <li><span>总结当前网页</span><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></li>
-              <li><span>翻译选中文本</span><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd></li>
+              <li>
+                <span>翻译整个页面</span>
+                <button class="shortcut-btn" type="button" data-shortcut="shortcutPage">Alt + Y</button>
+              </li>
+              <li>
+                <span>总结当前网页</span>
+                <button class="shortcut-btn" type="button" data-shortcut="shortcutSummarize">Alt + Shift + S</button>
+              </li>
+              <li>
+                <span>翻译选中文本</span>
+                <button class="shortcut-btn" type="button" data-shortcut="shortcutSelection">Alt + Shift + E</button>
+              </li>
             </ul>
+            <p class="hint">点右侧按键，再按下想用的组合，须包含 Alt 或 Ctrl。Esc 取消。避开 Alt+Shift+T，那是 Edge 用来聚焦工具栏的快捷键。改完后刷新正在看的网页。</p>
+            <button class="btn" id="resetShortcuts" type="button">恢复默认快捷键</button>
           </div>
         </section>
       </main>
