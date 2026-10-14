@@ -51,7 +51,7 @@ function langLabel(code) {
 function renderLangHint() {
   const { sourceLang, targetLang } = settings;
   if (sourceLang === 'auto' && targetLang === 'auto') {
-    els.langHint.textContent = '自动 = 中 ⇄ 英 互译：中文内容译成英文，其它语言译成中文。';
+    els.langHint.textContent = '中文译成英文，其它语言译成中文。';
     els.langHint.style.color = '';
   } else if (sourceLang === targetLang) {
     els.langHint.textContent = '源语言与目标语言相同，翻译时会自动反向处理。';
@@ -200,7 +200,7 @@ function buildLangOptions(autoLabel) {
 
 function initLanguageSelect() {
   els.sourceLang.innerHTML = buildLangOptions('自动识别');
-  els.targetLang.innerHTML = buildLangOptions('自动（中 ⇄ 英）');
+  els.targetLang.innerHTML = buildLangOptions('中 ⇄ 英');
 }
 
 function bindEvents() {

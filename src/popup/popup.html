@@ -49,11 +49,11 @@
 
     <div class="app">
       <header class="head">
-        <img class="logo" src="../../icons/icon48.png" alt="" width="34" height="34">
+        <img class="logo" src="../../icons/icon48.png" alt="" width="28" height="28">
         <div class="brand">
           <h1>AI 翻译助手</h1>
-          <p id="status" class="status"><span class="dot"></span><span id="statusText">正在读取配置…</span></p>
         </div>
+        <p id="status" class="status"><span class="dot"></span><span id="statusText">正在读取配置…</span></p>
       </header>
 
       <div class="tabs" id="tabs" role="tablist" aria-label="功能分区">
@@ -92,27 +92,32 @@
           role="tabpanel"
           aria-labelledby="tab-actions"
         >
-          <button class="action" data-action="translate-page" type="button">
+          <button class="action action--primary" data-action="translate-page" type="button">
             <span class="action-icon" aria-hidden="true"><svg class="icon"><use href="#i-globe" /></svg></span>
             <span class="action-text">
               <strong>翻译整个页面</strong>
-              <small>再次点击可恢复原文</small>
+              <small>再按一次恢复原文</small>
             </span>
+            <span class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>T</kbd></span>
           </button>
-          <button class="action" data-action="summarize-page" type="button">
-            <span class="action-icon" aria-hidden="true"><svg class="icon"><use href="#i-lines" /></svg></span>
-            <span class="action-text">
-              <strong>总结当前网页</strong>
-              <small>提炼要点与结论</small>
-            </span>
-          </button>
-          <button class="action" data-action="translate-selection" type="button">
-            <span class="action-icon" aria-hidden="true"><svg class="icon"><use href="#i-selection" /></svg></span>
-            <span class="action-text">
-              <strong>翻译选中文本</strong>
-              <small>先在页面上选中文字再点击</small>
-            </span>
-          </button>
+          <div class="action-list">
+            <button class="action" data-action="summarize-page" type="button">
+              <span class="action-icon" aria-hidden="true"><svg class="icon"><use href="#i-lines" /></svg></span>
+              <span class="action-text">
+                <strong>总结当前网页</strong>
+                <small>提炼要点与结论</small>
+              </span>
+              <span class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></span>
+            </button>
+            <button class="action" data-action="translate-selection" type="button">
+              <span class="action-icon" aria-hidden="true"><svg class="icon"><use href="#i-selection" /></svg></span>
+              <span class="action-text">
+                <strong>翻译选中文本</strong>
+                <small>先在页面上选中文字</small>
+              </span>
+              <span class="keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>E</kbd></span>
+            </button>
+          </div>
 
           <div class="card">
             <div class="lang-row">
@@ -134,15 +139,16 @@
                 <select id="targetLang"></select>
               </label>
             </div>
-            <p class="hint" id="langHint">自动 = 中 ⇄ 英 互译：中文内容译成英文，其它语言译成中文。</p>
+            <p class="hint" id="langHint">中文译成英文，其它语言译成中文。</p>
             <label class="switch">
               <input type="checkbox" id="autoTranslateSelection" />
+              <span class="switch-copy">
+                <span>划词后自动翻译</span>
+                <small>选中文字后直接显示译文</small>
+              </span>
               <span class="track"></span>
-              <span>划词后自动翻译（无需点击按钮）</span>
             </label>
           </div>
-
-          <p class="tip">快捷键：<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> 翻译整页 · <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> 总结 · <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> 划词翻译</p>
         </section>
 
         <!-- 设置 -->
@@ -154,6 +160,7 @@
           aria-labelledby="tab-settings"
         >
           <div class="card">
+            <p class="section-label">模型服务</p>
             <label class="field">
               <span class="field-label">API Key</span>
               <span class="input-row">
@@ -169,7 +176,7 @@
               <span class="field-label">模型</span>
               <input id="model" type="text" autocomplete="off" spellcheck="false" placeholder="deepseek-flash" />
             </label>
-            <p class="hint">兼容 OpenAI 协议：可填写任意 OpenAI 兼容服务的 Key、Base URL 与模型名（如 gpt-4o-mini、deepseek-chat）。</p>
+            <p class="hint">兼容 OpenAI 协议。Key 只保存在本机。</p>
             <div class="row">
               <button class="primary" id="testBtn" type="button">测试连接</button>
               <button class="ghost" id="resetBtn" type="button">恢复默认</button>
@@ -178,21 +185,24 @@
           </div>
 
           <div class="card">
-            <label class="field">
-              <span class="field-label">页面翻译方式</span>
-              <select id="pageMode">
-                <option value="replace">替换原文</option>
-                <option value="bilingual">双语对照（原文 + 译文）</option>
-              </select>
-            </label>
-            <label class="field">
-              <span class="field-label">总结详细程度</span>
-              <select id="summaryLength">
-                <option value="short">简短</option>
-                <option value="medium">标准</option>
-                <option value="detailed">详细</option>
-              </select>
-            </label>
+            <p class="section-label">翻译偏好</p>
+            <div class="pref-row">
+              <label class="field">
+                <span class="field-label">页面翻译方式</span>
+                <select id="pageMode">
+                  <option value="replace">替换原文</option>
+                  <option value="bilingual">双语对照</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">总结详细程度</span>
+                <select id="summaryLength">
+                  <option value="short">简短</option>
+                  <option value="medium">标准</option>
+                  <option value="detailed">详细</option>
+                </select>
+              </label>
+            </div>
             <label class="switch">
               <input type="checkbox" id="disableThinking" />
               <span class="track"></span>
@@ -207,7 +217,10 @@
       <footer class="foot">
         <button class="opt-link" id="openOptions" type="button">
           <svg class="icon" aria-hidden="true"><use href="#i-sliders" /></svg>
-          <span class="opt-link-text">打开管理面板 · 翻译记录与 Token 统计</span>
+          <span class="opt-link-text">
+            <strong>管理面板</strong>
+            <small>记录与用量</small>
+          </span>
           <svg class="icon opt-link-arrow" aria-hidden="true"><use href="#i-chevron-right" /></svg>
         </button>
       </footer>
